@@ -1,91 +1,122 @@
 # VitePress-Butterfly 文章仓库模板
 
-这是 [VitePress-Butterfly](https://github.com/57Darling02/VitePress_butterfly) 博客主题的**文章仓库模板**，也是整个博客的使用入口。仓库内置 Obsidian 发布插件和 obsidian-git，手机和平板无需安装 Git；桌面端沿用 obsidian-git 的系统 Git。
+这是 [VitePress-Butterfly](https://github.com/57Darling02/VitePress_butterfly) 的文章仓库模板，也是整个博客的使用入口。仓库已内置 Obsidian 发布插件和 obsidian-git；桌面端与移动端都可以完成首次配置和日常发布。
 
-博客采用双仓库模型：
+## 双仓库模型
 
 ```text
-本仓库（私密）＝ 你的文章仓库：文章、图片、站点配置，你唯一需要维护的地方
-博客仓库（公开）＝ 主题快照与构建部署：由「部署主题」一次性快照主题源码，日常不用碰
+文章仓库（私密）＝ Markdown、图片和 site_config.yml，日常只维护这里
+博客仓库（公开）＝ 主题源码、构建工作流和 GitHub Pages，通常不用手动修改
 ```
 
-## 快速开始（约 5 分钟）
+两个仓库通过 GitHub Actions secrets 连接：
 
-### 1. 拿到仓库内容
+| 仓库 | secrets |
+|---|---|
+| 文章仓库 | `BLOG_REPO`、`PAT` |
+| 博客仓库 | `WIKI_URL`、`PAT` |
 
-任选其一：
+文章仓库 Push 后，内置的 `trigger.yml` 会通知博客仓库重新构建。
 
-- **零门槛（推荐）**：直接下载本模板的 ZIP（`Code → Download ZIP`，公开仓库无需登录），解压后重命名为你的博客目录。之后插件会自动为你创建私密文章仓库
-- **先建仓库**：点击右上角 `Use this template` 创建自己的私密仓库（名称随意，例如 `my-blog`），再下载 ZIP 或 `git clone`
+## 快速开始
 
-> 下载的压缩包不包含 `.git` 目录，这没关系——「部署主题」时插件会把本地内容推送到云端，并在本地生成完整的 `.git` 工作副本。
+### 1. 获取并打开 Vault
 
-### 3. 用 Obsidian 打开
+任选一种方式：
 
-1. Obsidian → `Open folder as vault`，选择刚才解压/克隆的目录
-2. 如果提示受限模式，进入 `设置 → 第三方插件`，关闭受限模式以启用内置插件
-3. 打开 `设置 → VitePress Butterfly 发布`
+- **第一次使用（推荐）**：下载本仓库 ZIP，解压后用 Obsidian 打开；插件会在配置文章仓库时初始化本地 Git
+- **已经有文章仓库**：直接 `git clone` 后用 Obsidian 打开
 
-### 4. 填写 PAT 并部署主题
+进入 `设置 → 第三方插件`，关闭受限模式并启用内置的：
 
-1. 准备一个 GitHub PAT：`GitHub 头像 → Settings → Developer settings → Personal access tokens → Tokens (classic)`，勾选权限 `repo` + `workflow`（只显示一次，建议专用 token）
-2. 在插件设置中填入 **GitHub PAT**——这是唯一必填项。文章仓库名会自动识别（Git 克隆目录读取 `.git`，压缩包则按 Vault 名称）；博客仓库名留空时默认 `你的用户名.github.io`
-3. 依次点击四项检测（PAT 连通性 → 文章仓库 → 博客仓库 → 就绪检测），全部通过后点击 **部署主题**
+- VitePress Butterfly Publisher
+- Obsidian Git
 
-「部署主题」由插件**直接通过 GitHub API 完成**（不需要 GitHub Actions 服务器）：
+### 2. 准备 PAT
 
-1. 把**本地内容强制推送到文章仓库**（不存在则创建私密仓库）——本地是唯一内容源，云端总是等于本地
-2. 博客仓库不存在则创建公开仓库；然后把**主题源码快照**写入博客仓库（覆盖原有内容，所以仓库之前是什么都无所谓）
-3. 配置两个仓库的 secrets、启用 Actions 与 GitHub Pages
-4. 触发首次构建——构建直接使用快照内容，**不会自动跟随主题更新**
-5. 本地生成完整 `.git` 工作副本，obsidian-git 直接可用
+在 GitHub 创建 **Tokens (classic)**：
 
-主题更新是**手动、可控的**：需要升级主题时，重新执行「部署主题」即可（幂等：仓库复用、内容再次快照、secrets 重新写入）。
+```text
+GitHub → Settings → Developer settings
+→ Personal access tokens → Tokens (classic)
+```
 
-### 5. 开始写作
+勾选：
 
-部署主题完成后本地已有完整 `.git` 工作副本（指向你的文章仓库），之后：
+- `repo`
+- `workflow`
 
-1. 在 Obsidian 中写 Markdown（命令面板可运行 **新建博客文章** 生成带 frontmatter 的文章）
-2. obsidian-git 面板：**Commit** → **Push**——推送会自动触发博客重新构建部署
-3. 多设备切换时先 **Pull** 同步云端内容
+建议创建一个专用于博客的 PAT。PAT 只显示一次，请妥善保存。
 
-> 文章仓库云端内容永远等于最近一次「部署主题」时的本地内容；之后请用 obsidian-git 的 Push 保持同步。
+### 3. 配置仓库
+
+打开 `设置 → VitePress Butterfly 发布`，依次完成以下三步。
+
+#### 第一步：检测 PAT
+
+1. 输入 PAT
+2. 点击 **检测连通性**
+3. 显示 `已连接 @用户名` 后，后续配置才会解锁
+
+插件会自动建议：
+
+- 文章仓库名：当前 Vault 目录名
+- 博客仓库名：`你的用户名.github.io`
+
+你可以直接使用，也可以修改。PAT 一旦改变，后续区域会重新锁定，必须再次检测。
+
+#### 第二步：配置文章仓库
+
+确认文章仓库名和博客仓库名都已填写，然后点击 **配置文章仓库**。
+
+- **文章仓库已存在**：不上传、不覆盖任何文章，只更新 `BLOG_REPO` 和 `PAT`
+- **文章仓库不存在**：先在本地初始化 Git 并提交当前 Vault，确认本地准备成功后才创建私密仓库、上传内容并配置 secrets
+
+新建文章仓库时，插件会直接复用 obsidian-git 的 Git 引擎，不会打包第二套 Git。上传完成后可直接使用 obsidian-git Commit / Push / Pull。
+
+> 如果你下载的是 ZIP，却填写了一个已经存在的文章仓库，插件会遵守“已有仓库不覆盖”的原则，仅配置 secrets，不会把当前 ZIP 内容推到该仓库。
+
+#### 第三步：配置博客仓库
+
+点击 **配置博客仓库**。
+
+- **博客仓库已存在**：不修改仓库内容，只更新 `WIKI_URL` 和 `PAT`
+- **博客仓库不存在**：通过 GitHub 的 **Use this template API**，从 `57Darling02/VitePress_butterfly` 一次性创建公开仓库，再配置 secrets、GitHub Pages 和首次构建
+
+因此已有博客仓库绝不会被插件重置或覆盖；如果已有仓库内容不正确，请删除后重新点击配置，或自行维护仓库内容。
+
+## 为什么这套流程更容易重试
+
+所有按钮都可以安全重复点击：
+
+- 仓库存在检测和 secrets 写入都是幂等操作
+- 主题使用一次 Template API 创建，不再逐文件复制，显著减少网络请求
+- 新建文章仓库前会先完成本地 Git 准备，避免本地错误在 GitHub 留下空仓库
+- 如果远端创建成功但响应中断，插件会记录未完成状态；重新点击同一个按钮会继续完成上传或配置
+- Pages 或首次构建触发失败只会显示警告，不会把已成功创建和配置的仓库判定为失败
+- 每次 GitHub 请求最长等待 15 秒，超时后按钮会恢复，可直接重试
+
+## 日常写作与发布
+
+首次配置后，Publisher 通常不再参与文章同步：
+
+1. 在 Obsidian 中编写 Markdown
+2. 使用 obsidian-git **Commit**
+3. 使用 obsidian-git **Push**
+4. 文章仓库的工作流自动通知博客仓库构建
+
+多设备切换前先使用 obsidian-git **Pull**。
+
+插件设置中的 **触发构建** 只用于手动重新构建博客，一般无需点击。
 
 ## 双插件分工
 
 | 插件 | 职责 |
 |---|---|
-| **VitePress Butterfly Publisher**（内置） | 初始化与部署：推送本地内容到文章仓库、创建/配置博客仓库（部署壳）、配置 secrets、安装部署工作流 |
-| **obsidian-git**（内置） | 日常内容同步：Commit / Push / Pull，桌面端与移动端均可 |
+| VitePress Butterfly Publisher | PAT 验证、创建/配置两个仓库、配置 GitHub secrets 与 Pages |
+| obsidian-git | 日常 Commit / Push / Pull，以及新文章仓库的首次本地 Git 初始化和上传 |
 
-> Publisher 直接复用 obsidian-git 的 Git 引擎，不会重复加载第二套 Git。obsidian-git 在移动端内置纯 JS Git，无需安装软件；Publisher 会把 PAT 写入 obsidian-git 的本地凭据，并写入本地 `.git/config` 的远程地址（不会上传），随后可直接 Commit / Push / Pull。
-
-## 内置插件说明
-
-插件面板（`设置 → VitePress Butterfly 发布`）按步骤提供四项检测，每项只验证自己的边界。点击检测后会立即显示旋转加载状态；GitHub 15 秒无响应时会自动结束并提示网络超时：
-
-| 检测 | 验证内容 |
-|---|---|
-| PAT 连通性 | token 是否有效（`GET /user`），通过后才能继续后续检测 |
-| 博客文章仓库 | 解析目标仓库名（Git 克隆目录 / Vault 名称自动识别）；存在与否不重要，部署时都会覆盖 |
-| 博客样式仓库 | 解析目标仓库名（留空默认 `用户名.github.io`）；部署时会把主题快照覆盖进去，所以内容不重要 |
-| 就绪检测 | 两个仓库名均解析成功后，即可执行「部署主题」 |
-
-操作区提供两个动作：
-
-| 操作 | 作用 |
-|---|---|
-| 部署主题 | 把本地内容推送到文章仓库（覆盖云端）、把主题快照写入博客仓库、配置 secrets 并触发首次构建，本地生成 `.git` 工作副本（幂等，可重复执行） |
-| 触发部署 | 不发布内容，直接通知博客仓库重新构建 |
-
-> 发布与拉取交给 obsidian-git：Push 后文章仓库的 trigger 工作流会自动通知博客仓库重建。
-
-### 安全说明
-
-- PAT 只保存在本机 Publisher 设置、obsidian-git 本地凭据（桌面端远程地址也可能包含 PAT）以及 GitHub 加密 secrets 中，不会提交到仓库
-- 建议使用专用 PAT；泄露后可随时在 GitHub 吊销
-- 文章仓库推荐保持私密；博客仓库是公开的（GitHub Pages 部署）
+Publisher 会把 GitHub 用户名和 PAT 写入 obsidian-git 的本地凭据；这些数据不会提交到文章仓库。`.gitignore` 已过滤所有插件的 `data.json`。
 
 ## 写文章
 
@@ -103,54 +134,68 @@ layout: doc
 # Hello World
 ```
 
-- 只有带 `layout: doc` 的文章才会进入首页、归档、标签等文章流；不带 layout 的文件不会被发布（例如本 README）。
-- 封面和图片支持相对路径（`./cover.webp`、`../附件/xxx.png`），也支持 `/image/xxx.png`（对应 `public/`）和外链。
-- 自定义页面用 `layout: page`（参考 `FriendLink/` 示例）；短内容可以用 `layout: shuoshuo`。
-- 也可以在 Obsidian 命令面板运行 **新建博客文章**，自动生成带 frontmatter 的文章。
-- 更多写作技巧见 `用法拓展/` 目录下的文章。
+- `layout: doc`：普通博客文章，会进入首页、归档和标签页
+- `layout: page`：自定义页面
+- `layout: shuoshuo`：短内容
+- 不带 layout 的 Markdown 不会进入文章流，例如本 README
+- 图片支持相对路径、`public/` 根路径和外链
 
-## 用 Obsidian 写作（推荐）
-
-本仓库内置 Obsidian 配置（`.obsidian/`）：
-
-- 粘贴的图片自动保存到 `附件/`
-- 链接使用相对路径 Markdown 格式，与博客构建完全兼容
-- 内置双插件：Publisher 负责初始化/部署，obsidian-git 负责日常同步
-
-桌面端高级用户可以在 obsidian-git 中使用完整 Git 能力（历史、diff、分支、回滚）；移动端同样支持（见上文配置）。
+也可以在命令面板运行 **新建博客文章**，自动生成 frontmatter。
 
 ## 站点配置
 
-- `site_config.yml`：站点名称、首页、导航、个人信息等全部配置
-- `public/`：站点的公共静态资源（头像、背景图等），配置中用 `/文件名` 引用
+- `site_config.yml`：站点名称、首页、导航、个人信息等配置
+- `public/`：头像、背景图等公共静态资源
+- `用法拓展/`：更多写作与配置示例
 
-## 插件更新
+## 安全说明
 
-内置插件的源码在 `.obsidian/plugins/vitepress-butterfly-publisher/` 内（`src/` + 预编译的 `main.js`）。模板仓库更新后，重新下载 ZIP 或拉取远端即可获得新版本插件；发布插件不会上传插件自身的设置文件。
-
-## 主题与更新
-
-- 主题源码：[57Darling02/VitePress_butterfly](https://github.com/57Darling02/VitePress_butterfly)
-- 博客仓库与主题仓库**没有 fork 关系，也不自动跟随更新**：「部署主题」时把主题源码**一次性快照**进博客仓库；需要升级主题时，在插件里重新执行一次「部署主题」即可（构建使用快照内容，主题仓库的临时改动不会影响你的博客）
+- 文章仓库默认创建为私密仓库
+- 博客仓库创建为公开仓库，以便 GitHub Pages 部署
+- PAT 保存在本机插件设置、obsidian-git 本地凭据以及 GitHub 加密 secrets 中
+- `.obsidian/plugins/*/data.json` 已加入 `.gitignore`，PAT 不会被提交
+- 建议使用专用 PAT；泄露后可随时在 GitHub 吊销
 
 ## 常见问题
 
-**PAT 需要什么权限？**
-`repo` + `workflow`。插件会把它写入两个仓库的 secrets：博客仓库构建时用它拉取私密文章仓库，文章仓库用它通知博客重新部署。
+### PAT 检测通过后为什么重启 Obsidian 又要检测？
 
-**文章仓库必须私密吗？**
-推荐私密。博客仓库是公开的（GitHub Pages 部署），但你的文章始终只存在于私密仓库中，构建时才被拉取。
+验证状态只保留在当前插件会话中。重启后再次点击检测，确保后续写操作使用的是当前有效 PAT。
 
-**如何排查部署失败？**
-- 检查博客仓库 `Actions` 是否已启用（部署主题会自动开启，若被组织策略阻止需手动开启）
-- 检查博客仓库 `Settings → Pages` 的 Source 是否为 `GitHub Actions`
-- 重新部署主题是安全的（幂等，仓库直接复用，本地内容再次覆盖云端）
+### 网络中断后要删除仓库重来吗？
 
-**还没部署主题就推送了文章，会报错吗？**
-不会。推送/触发部署会检测到尚未初始化并安全跳过，同时提示你先完成「部署主题」。
+不需要。直接重新点击刚才的配置按钮。插件会检测仓库是否已经创建，并继续完成剩余步骤。
 
-**博客地址是什么？**
-如果博客仓库命名为 `用户名.github.io`，地址就是 `https://用户名.github.io`；如果命名为其他名称，地址为 `https://用户名.github.io/仓库名/`。
+### 已有仓库会被覆盖吗？
 
-**插件源码在哪里？如何构建？**
-源码位于 `.obsidian/plugins/vitepress-butterfly-publisher/src/`，在插件目录执行 `pnpm install && pnpm build` 即可重新生成 `main.js`。
+不会。已有文章仓库和博客仓库都只更新各自的两个 secrets，不修改内容。
+
+### 博客仓库创建后 Pages 没有开启怎么办？
+
+进入博客仓库：
+
+```text
+Settings → Pages → Source → GitHub Actions
+```
+
+然后回到插件点击 **触发构建**。
+
+### 如何更新主题？
+
+已有博客仓库由用户自行维护，插件不会自动覆盖主题。若希望重新使用最新模板，最简单的方式是删除旧博客仓库，再点击 **配置博客仓库** 重新从模板创建。操作前请确认仓库中没有需要保留的自定义内容。
+
+### 插件源码在哪里？
+
+位于：
+
+```text
+.obsidian/plugins/vitepress-butterfly-publisher/
+```
+
+构建命令：
+
+```bash
+cd .obsidian/plugins/vitepress-butterfly-publisher
+pnpm install
+pnpm build
+```

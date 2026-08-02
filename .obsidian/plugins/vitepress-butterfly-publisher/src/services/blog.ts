@@ -1,11 +1,13 @@
-import { Notice, App, Platform } from "obsidian";
+import { App, Notice } from "obsidian";
 
 import { GitHubApiError, GitHubClient, GitHubRepositoryRef } from "./github";
 import type { PluginSettings } from "../settings";
 
-const DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
-
-
+const BLOG_TEMPLATE: GitHubRepositoryRef = {
+  owner: "57Darling02",
+  name: "VitePress_butterfly",
+};
+const DEFAULT_BRANCH = "main";
 
 export interface BlogServiceDeps {
   app: App;
@@ -13,15 +15,32 @@ export interface BlogServiceDeps {
   saveSettings(changes: Partial<PluginSettings>): Promise<void>;
 }
 
+export interface PatCheckResult {
+  login: string;
+  suggestedArticleRepoName: string;
+  suggestedBlogRepoName: string;
+}
+
+export interface RepositoryConfigurationResult {
+  repository: GitHubRepositoryRef;
+  created: boolean;
+  initialized: boolean;
+  warning?: string;
+}
+
 interface ObsidianGitManager {
   init(): Promise<void>;
+  status(): Promise<{ all: readonly unknown[] }>;
   setRemote(remote: string, url: string): Promise<void>;
-  fetch(remote?: string): Promise<void>;
-  checkout(ref: string, remote?: string): Promise<unknown>;
   setConfig(path: string, value: string): Promise<unknown>;
+  commitAll(options: { message: string }): Promise<unknown>;
+  branchInfo(): Promise<{ current?: string; branches: readonly string[] }>;
+  createBranch(name: string): Promise<unknown>;
+  updateUpstreamBranch(tracking: string): Promise<unknown>;
+  resolveRef?(ref: string): Promise<string>;
   /** simple-git instance exposed by obsidian-git on desktop. */
   git?: {
-    checkout(options: string[]): Promise<unknown>;
+    revparse(options: string[]): Promise<string>;
   };
 }
 
@@ -41,221 +60,266 @@ interface AppWithPluginRegistry extends App {
   };
 }
 
-export interface RepoCheckResult {
-  /** Resolved repository reference, or `null` when the name is undetermined. */
-  repository: GitHubRepositoryRef | null;
-  /** Whether deploying can proceed for this repository. */
-  ready: boolean;
-}
-
 /**
- * Initialization and deployment helper. Daily content sync (commit, push,
- * pull) is handled by the obsidian-git plugin; this service covers everything
- * git does not: repository creation, force-pushing the local vault content,
- * Actions secrets, Pages configuration, and rebuild triggers.
- *
- * "Deploy theme" runs entirely from the plugin through the GitHub API:
- * the content repository is overwritten with the local vault content (the
- * local folder is the single source of truth and always ends up with a full
- * `.git` working copy), the blog repository is a pure deployment shell whose
- * content is force-synced to the theme on every build.
+ * Two independent, retry-safe repository setup actions. Existing repositories
+ * are never overwritten; only their Actions secrets are refreshed.
  */
 export class BlogService {
+  private cachedClient?: { pat: string; client: GitHubClient };
+  private verifiedPat = "";
+
   constructor(private readonly deps: BlogServiceDeps) {}
 
-  // ------------------------------------------------------------------
-  // Step checks: each is independent and only verifies its own concern.
-  // ------------------------------------------------------------------
-
-  /** 1. PAT connectivity only. Returns the authenticated login. */
-  async checkPat(): Promise<string> {
-    const client = this.client();
+  /** Validates the PAT and supplies low-friction default repository names. */
+  async checkPat(): Promise<PatCheckResult> {
+    const settings = this.requirePat("检测连通性");
+    const pat = settings.pat.trim();
+    this.verifiedPat = "";
+    // Connectivity checks must always hit GitHub instead of reusing a cached
+    // authenticated user from an earlier successful request.
+    const client = this.client(true);
     const user = await client.getAuthenticatedUser();
-    return user.login;
-  }
-
-  /**
-   * 2. Content repository: resolve the target name (manual, local Git
-   *    remote, or Vault name). Existence does not matter — deploying will
-   *    create it and overwrite it with the local content.
-   */
-  async checkContentRepo(): Promise<RepoCheckResult> {
-    const client = this.client();
-    const { repository } = await this.detectContentRepository(client);
-    return { repository, ready: repository !== null };
-  }
-
-  /**
-   * 3. Blog repository: resolve the name only. Existence and content do not
-   *    matter — deploying creates it when missing, and every build overwrites
-   *    it with the latest theme.
-   */
-  async checkBlogRepo(): Promise<RepoCheckResult> {
-    const client = this.client();
-    const user = await client.getAuthenticatedUser();
-    const repository = {
-      owner: user.login,
-      name: this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login),
+    if (this.deps.getSettings().pat.trim() !== pat) {
+      throw new Error("PAT 已在检测过程中修改，请重新检测。");
+    }
+    this.verifiedPat = pat;
+    return {
+      login: user.login,
+      suggestedArticleRepoName: sanitizeRepoName(this.deps.app.vault.getName(), "my-blog-wiki"),
+      suggestedBlogRepoName: `${user.login}.github.io`,
     };
-    return { repository, ready: true };
   }
 
-  /** 4. Readiness: both repositories must be resolvable before deploying. */
-  async checkReady(): Promise<void> {
-    await this.checkContentRepo();
-    await this.checkBlogRepo();
+  invalidatePat(): void {
+    this.verifiedPat = "";
+    this.cachedClient = undefined;
   }
-
-  // ------------------------------------------------------------------
-  // Actions.
-  // ------------------------------------------------------------------
 
   /**
-   * Deploys the theme (a one-time snapshot, nothing tracks the theme
-   * afterwards):
+   * Configures the article repository.
    *
-   * 1. ensure the content repository exists (private, empty) and overwrite
-   *    its default branch with the local vault content (API force push);
-   * 2. ensure the blog repository exists (public) and snapshot the theme
-   *    source into it (existing content is overwritten, so a repository
-   *    that is "wrong" — e.g. another user's old blog — becomes correct);
-   * 3. enable Actions, write the secrets and configure Pages;
-   * 4. trigger the first build of the snapshot.
-   *
-   * Rerunning is safe: everything is idempotent, the local content always
-   * wins on the content repository, and the theme is re-snapshotted.
+   * Existing repository: only refresh BLOG_REPO and PAT.
+   * Missing repository: create a private empty repository, initialize/push the
+   * current Vault through obsidian-git, then write the same secrets.
    */
-  async setup(): Promise<void> {
-    const { pat, blogRepoName, themeRepo, configurePages } = this.requireSettings("部署主题");
+  async configureArticleRepository(): Promise<RepositoryConfigurationResult> {
+    const settings = this.requireVerifiedRepositoryNames("配置文章仓库");
     const client = this.client();
     const user = await client.getAuthenticatedUser();
+    const article = { owner: user.login, name: validateRepoName(settings.repoName, "文章仓库") };
+    const blogName = validateRepoName(settings.blogRepoName, "博客仓库");
+    const fullName = repositoryFullName(article);
 
-    // 1. Content repository: create when missing, then force-push local content.
-    const content = await this.detectContentRepository(client);
-    if (!content.repository) {
-      throw new Error("未解析出文章仓库名：请先在设置中填写文章仓库名，或从 Git 克隆打开本目录。");
+    let exists = await this.repositoryExists(client, article);
+    const pending = settings.pendingArticleRepo === fullName;
+    let created = false;
+    const shouldInitialize = !exists || pending;
+
+    let git: { plugin: ObsidianGitPlugin; manager: ObsidianGitManager } | undefined;
+    if (shouldInitialize) {
+      await this.assertLocalRepositoryTarget(article);
+      // Finish every local-only step before creating a remote repository, so
+      // local Git problems can never leave an empty repository on GitHub.
+      git = await this.prepareLocalRepository(article, settings.pat);
     }
-    if (!(await this.repositoryExists(client, content.repository))) {
-      content.repository = await this.createContentRepository(
-        client,
-        user.login,
-        content.repository.name,
-      );
+
+    if (!exists) {
+      // Save intent before the request. If GitHub creates the repository but
+      // the response is lost, retrying continues the upload instead of
+      // mistaking it for a pre-existing repository.
+      await this.deps.saveSettings({ pendingArticleRepo: fullName });
+      try {
+        await client.createRepository({
+          name: article.name,
+          private: true,
+          autoInit: false,
+        });
+        created = true;
+        exists = true;
+      } catch (error) {
+        if (!(await this.createdDespiteError(client, article, error))) {
+          throw error;
+        }
+        created = true;
+        exists = true;
+      }
     }
-    const contentBranch = (await client.getRepository(content.repository)).defaultBranch;
-    const files = await this.collectVaultFiles();
-    new Notice(`正在推送本地内容到 ${content.repository.owner}/${content.repository.name} ...`);
-    await client.pushFiles(content.repository, contentBranch, files, {
-      message: "Deploy theme: sync local vault content",
-      authorName: user.login,
-      authorEmail: `${user.login}@users.noreply.github.com`,
+
+    // Write secrets before the first push so trigger.yml sees a complete
+    // configuration immediately; this avoids one skipped first deployment.
+    await client.setActionsSecrets(article, {
+      BLOG_REPO: `${user.login}/${blogName}`,
+      PAT: settings.pat,
     });
 
-    // 2. Blog repository: create when missing, then snapshot the theme into
-    //    it (its previous content, whatever it was, is overwritten). The
-    //    theme is validated first so a bad setting fails before any
-    //    repository is created.
-    const theme = parseRepoRef(themeRepo.trim() || DEFAULT_THEME_REPO);
-    if (!(await this.repositoryExists(client, theme))) {
-      throw new Error(`主题仓库 ${theme.owner}/${theme.name} 不存在或无法访问，请检查设置中的「主题仓库」。`);
+    if (shouldInitialize && exists && git) {
+      await this.pushPreparedLocalRepository(git, article, settings.pat);
+      await this.deps.saveSettings({ pendingArticleRepo: "" });
     }
-    const blog = {
-      owner: user.login,
-      name: this.resolveBlogRepoName(blogRepoName, user.login),
+
+    return {
+      repository: article,
+      created,
+      initialized: shouldInitialize,
     };
-    if (!(await this.repositoryExists(client, blog))) {
-      new Notice(`博客仓库不存在，正在创建 ${blog.name} ...`);
-      await client.createRepository({ name: blog.name, private: false });
-    }
-    new Notice(`正在把主题快照写入 ${blog.name} ...`);
-    await client.copyRepositoryBranch(theme, blog, {
-      message: "Deploy theme: snapshot theme source",
-      authorName: user.login,
-      authorEmail: `${user.login}@users.noreply.github.com`,
-    });
-
-    // 3. Wire everything: Actions, secrets, Pages.
-    await client.enableActions(blog);
-    await client.setActionsSecret(blog, "WIKI_URL", `https://github.com/${content.repository.owner}/${content.repository.name}.git`);
-    await client.setActionsSecret(blog, "PAT", pat);
-    await client.setActionsSecret(content.repository, "BLOG_REPO", `${blog.owner}/${blog.name}`);
-    await client.setActionsSecret(content.repository, "PAT", pat);
-    if (configurePages) {
-      await client.configurePages(blog);
-    }
-
-    // 4. Kick off the first build of the snapshot.
-    await client.dispatchRepositoryEvent(blog, "contents-updated");
-
-    // 5. Make the local vault a full Git working copy for obsidian-git.
-    await this.ensureLocalGit(content.repository, contentBranch, pat);
-
-    new Notice(`部署完成！博客仓库：${blog.name}，首次构建已触发。`);
   }
 
-  /** Directly asks the blog repository to rebuild. */
+  /**
+   * Configures the public blog repository.
+   *
+   * Existing repository: only refresh WIKI_URL and PAT (content untouched).
+   * Missing repository: create it once from the official GitHub template,
+   * then configure secrets, Pages and the first build.
+   */
+  async configureBlogRepository(): Promise<RepositoryConfigurationResult> {
+    const settings = this.requireVerifiedRepositoryNames("配置博客仓库");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const articleName = validateRepoName(settings.repoName, "文章仓库");
+    const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "博客仓库") };
+    const fullName = repositoryFullName(blog);
+
+    let exists = await this.repositoryExists(client, blog);
+    const pending = settings.pendingBlogRepo === fullName;
+    let created = false;
+    const shouldInitialize = !exists || pending;
+
+    if (!exists) {
+      await this.deps.saveSettings({ pendingBlogRepo: fullName });
+      try {
+        await client.createRepositoryFromTemplate(BLOG_TEMPLATE, {
+          owner: user.login,
+          name: blog.name,
+          private: false,
+        });
+        created = true;
+        exists = true;
+      } catch (error) {
+        if (!(await this.createdDespiteError(client, blog, error))) {
+          throw error;
+        }
+        created = true;
+        exists = true;
+      }
+    }
+
+    if (!exists) {
+      throw new Error(`博客仓库 ${fullName} 尚不可用，请稍后直接重试。`);
+    }
+
+    await client.setActionsSecrets(blog, {
+      WIKI_URL: `https://github.com/${user.login}/${articleName}.git`,
+      PAT: settings.pat,
+    });
+
+    let warning: string | undefined;
+    if (shouldInitialize) {
+      try {
+        await client.configurePages(blog);
+      } catch (error) {
+        warning = `Pages 未能自动配置：${errorMessage(error)}。可稍后在 GitHub 仓库 Settings → Pages 中选择 GitHub Actions。`;
+      }
+
+      // Dispatch comes last. A failure here does not undo repository creation
+      // or secret configuration and can be retried manually later.
+      try {
+        await client.dispatchRepositoryEvent(blog, "contents-updated");
+      } catch (error) {
+        const dispatchWarning = `首次构建未能自动触发：${errorMessage(error)}。可稍后点击「触发构建」。`;
+        warning = warning ? `${warning} ${dispatchWarning}` : dispatchWarning;
+      }
+      await this.deps.saveSettings({ pendingBlogRepo: "" });
+    }
+
+    return {
+      repository: blog,
+      created,
+      initialized: shouldInitialize,
+      warning,
+    };
+  }
+
   async triggerDeploy(): Promise<void> {
+    const settings = this.requireVerifiedPat("触发部署");
+    const blogName = validateRepoName(settings.blogRepoName, "博客仓库");
     const client = this.client();
     const user = await client.getAuthenticatedUser();
-    const blog = {
-      owner: user.login,
-      name: this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login),
-    };
-
-    try {
-      await client.dispatchRepositoryEvent(blog, "contents-updated");
-    } catch (error) {
-      if (isNotFound(error)) {
-        throw new Error("博客仓库不存在，请先「部署主题」。");
-      }
-      throw error;
-    }
-    new Notice("已触发博客仓库重建。");
+    await client.dispatchRepositoryEvent(
+      { owner: user.login, name: blogName },
+      "contents-updated",
+    );
+    new Notice("已触发博客重新构建。", 4_000);
   }
 
-  /**
-   * Ensures the local vault is a complete Git working copy pointing at the
-   * content repository, so obsidian-git can Commit / Push / Pull directly.
-   */
-  private async ensureLocalGit(
+  private async prepareLocalRepository(
     repository: GitHubRepositoryRef,
-    branch: string,
     pat: string,
-  ): Promise<void> {
-    const existingConfig = await this.deps.app.vault.adapter
-      .read(".git/config")
-      .catch(() => null);
-    if (existingConfig) {
-      const existingRepository = parseGitHubRemote(existingConfig);
-      if (existingRepository && !sameRepository(existingRepository, repository)) {
-        throw new Error(
-          `当前 Vault 已连接 ${existingRepository.owner}/${existingRepository.name}，不会覆盖为 ${repository.owner}/${repository.name}。`,
-        );
-      }
-    }
-
-    const { plugin, manager } = await this.getObsidianGit(repository, pat);
-    const remote = "origin";
+  ): Promise<{ plugin: ObsidianGitPlugin; manager: ObsidianGitManager }> {
+    const git = await this.getObsidianGit(repository, pat);
+    const { manager } = git;
 
     await manager.init();
-    await manager.setRemote(remote, authenticatedGitHubUrl(repository, pat));
-    await manager.fetch(remote);
+    await manager.setConfig("user.name", repository.owner);
+    await manager.setConfig("user.email", `${repository.owner}@users.noreply.github.com`);
 
-    if (Platform.isDesktopApp) {
-      if (!manager.git) {
-        throw new Error("当前 obsidian-git 桌面端接口不兼容，请更新模板后重试。");
-      }
-      // Force checkout aligns local HEAD/index with the branch we just wrote.
-      await manager.git.checkout(["-f", "-B", branch, `${remote}/${branch}`]);
-    } else {
-      // obsidian-git's mobile manager uses isomorphic-git and forces the checkout.
-      await manager.checkout(branch, remote);
+    const status = await manager.status();
+    if (status.all.length > 0) {
+      await manager.commitAll({ message: "Initialize article repository" });
+    }
+    if (!(await this.hasLocalCommit(manager))) {
+      throw new Error("当前 Vault 没有可上传的文件，请至少保留一个未被 .gitignore 排除的文件。");
     }
 
-    await manager.setConfig(`branch.${branch}.remote`, remote);
-    await manager.setConfig(`branch.${branch}.merge`, `refs/heads/${branch}`);
-    plugin.unloadPlugin?.();
-    await plugin.init({ fromReload: true });
+    const branch = await manager.branchInfo();
+    if (!branch.current) {
+      throw new Error("本地 Git 未生成有效分支，请重启 Obsidian 后重试。");
+    }
+    if (branch.current !== DEFAULT_BRANCH) {
+      if (branch.branches.includes(DEFAULT_BRANCH)) {
+        throw new Error(
+          `当前位于 ${branch.current} 分支，但本地已存在 main 分支；请先在 obsidian-git 中切换到 main 后重试。`,
+        );
+      }
+      await manager.createBranch(DEFAULT_BRANCH);
+    }
+
+    return git;
+  }
+
+  private async pushPreparedLocalRepository(
+    git: { plugin: ObsidianGitPlugin; manager: ObsidianGitManager },
+    repository: GitHubRepositoryRef,
+    pat: string,
+  ): Promise<void> {
+    try {
+      await git.manager.setRemote("origin", authenticatedGitHubUrl(repository, pat));
+      await git.manager.updateUpstreamBranch(`origin/${DEFAULT_BRANCH}`);
+    } catch (error) {
+      throw new Error(`首次上传中断：${errorMessage(error)}。请直接重新点击「配置文章仓库」。`);
+    }
+
+    // The remote push is already complete. Reload failure should not make the
+    // user repeat a successful upload; restarting Obsidian is sufficient.
+    try {
+      git.plugin.unloadPlugin?.();
+      await git.plugin.init({ fromReload: true });
+    } catch {
+      new Notice("文章已上传；obsidian-git 刷新失败，请稍后重启 Obsidian。", 8_000);
+    }
+  }
+
+  private async hasLocalCommit(manager: ObsidianGitManager): Promise<boolean> {
+    try {
+      if (manager.resolveRef) {
+        return Boolean(await manager.resolveRef("HEAD"));
+      }
+      if (manager.git) {
+        return Boolean((await manager.git.revparse(["--verify", "HEAD"])).trim());
+      }
+    } catch {
+      return false;
+    }
+    return false;
   }
 
   private async getObsidianGit(
@@ -271,7 +335,6 @@ export class BlogService {
       throw new Error("obsidian-git 尚未初始化，请重启 Obsidian 后重试。");
     }
 
-    // GitHub Basic authentication accepts the account login and PAT.
     plugin.localStorage.setUsername(repository.owner);
     plugin.localStorage.setPassword(pat);
 
@@ -280,110 +343,41 @@ export class BlogService {
     }
     const manager = plugin.gitManager;
     if (!manager) {
-      throw new Error("无法初始化 obsidian-git，请确认内置插件版本完整。");
+      throw new Error("无法初始化 obsidian-git，请重启 Obsidian 后重试。");
     }
-
     return { plugin, manager };
   }
 
-  /**
-   * Collects the vault files to push, honoring the vault's `.gitignore`
-   * (so plugin data containing the PAT never leaves the device).
-   */
-  private async collectVaultFiles(): Promise<Map<string, Uint8Array>> {
-    const rawRules = await this.deps.app.vault.adapter
-      .read(".gitignore")
-      .catch(() => null);
-    const rules = parseGitignore(rawRules ?? "");
-
-    const files = new Map<string, Uint8Array>();
-    for (const file of this.deps.app.vault.getFiles()) {
-      if (file.path.startsWith(".git/") || isIgnored(file.path, rules)) {
-        continue;
-      }
-      const data = await this.deps.app.vault.adapter.readBinary(file.path);
-      files.set(file.path, new Uint8Array(data));
+  private async assertLocalRepositoryTarget(repository: GitHubRepositoryRef): Promise<void> {
+    const config = await this.deps.app.vault.adapter.read(".git/config").catch(() => null);
+    if (!config) {
+      return;
     }
-    return files;
-  }
-
-  private client(): GitHubClient {
-    const { pat } = this.requireSettings("操作");
-    return new GitHubClient(pat);
-  }
-
-  private requireSettings(action: string): PluginSettings {
-    const settings = this.deps.getSettings();
-    if (!settings.pat.trim()) {
-      throw new Error(`请先在设置中填写 GitHub PAT 再${action}。`);
+    const remote = parseGitHubRemote(config);
+    if (remote && !sameRepository(remote, repository)) {
+      throw new Error(
+        `当前 Vault 已连接 ${repositoryFullName(remote)}；为避免误推送，不会改为 ${repositoryFullName(repository)}。`,
+      );
     }
-    return settings;
   }
 
-  private resolveBlogRepoName(value: string, login: string): string {
-    return value.trim() || `${login}.github.io`;
-  }
-
-  /** Creates the private content repository (empty; content is pushed next). */
-  private async createContentRepository(
+  private async createdDespiteError(
     client: GitHubClient,
-    owner: string,
-    name: string,
-  ): Promise<GitHubRepositoryRef> {
-    const safeName = sanitizeRepoName(name);
-
-    new Notice(`未识别到文章仓库，正在创建 ${safeName} ...`);
-    const created = await client.createRepository({ name: safeName, private: true });
-
-    const repository = { owner, name: created.name };
-    await this.deps.saveSettings({ repoName: created.name });
-    new Notice(`文章仓库已创建：${owner}/${created.name}`);
-    return repository;
-  }
-
-  /**
-   * Resolves the content repository target:
-   * 1. the manually entered repository name;
-   * 2. the `origin` remote from `.git/config`, when it points at the current
-   *    user's own account (desktop clones);
-   * 3. a repository whose name matches the Vault folder (zip downloads).
-   * Returns the resolved repository (or `null`) plus the preferred name to
-   * create when deploying.
-   */
-  private async detectContentRepository(
-    client: GitHubClient,
-  ): Promise<{ repository: GitHubRepositoryRef | null; preferredName: string }> {
-    const manual = this.deps.getSettings().repoName.trim();
-    if (manual) {
-      const user = await client.getAuthenticatedUser();
-      return { repository: { owner: user.login, name: manual }, preferredName: manual };
+    repository: GitHubRepositoryRef,
+    error: unknown,
+  ): Promise<boolean> {
+    // 422 commonly means a previous timed-out creation actually succeeded.
+    // For network/timeout errors, one probe provides the same recovery without
+    // introducing background polling or many extra requests.
+    if (error instanceof GitHubApiError && error.status !== 422) {
+      return false;
     }
-
-    const config = await this.deps.app.vault.adapter
-      .read(".git/config")
-      .catch(() => null);
-    if (config) {
-      const remote = parseGitHubRemote(config);
-      if (remote) {
-        const user = await client.getAuthenticatedUser();
-        if (remote.owner.toLowerCase() === user.login.toLowerCase()) {
-          return { repository: remote, preferredName: remote.name };
-        }
-        // The remote points at someone else's repository: not usable.
-        return { repository: null, preferredName: remote.name };
-      }
+    await wait(600);
+    try {
+      return await this.repositoryExists(client, repository);
+    } catch {
+      return false;
     }
-
-    const vaultName = this.deps.app.vault.getName();
-    if (vaultName) {
-      const user = await client.getAuthenticatedUser();
-      return {
-        repository: { owner: user.login, name: vaultName },
-        preferredName: vaultName,
-      };
-    }
-
-    return { repository: null, preferredName: "my-blog" };
   }
 
   private async repositoryExists(
@@ -394,60 +388,71 @@ export class BlogService {
       await client.getRepository(repository);
       return true;
     } catch (error) {
-      if (isNotFound(error)) {
+      if (error instanceof GitHubApiError && error.status === 404) {
         return false;
       }
       throw error;
     }
   }
-}
 
-// ----------------------------------------------------------------------
-// .gitignore support (subset: comments, `*` globs, trailing `/` for
-// directories; negation is not needed by the template's rules).
-// ----------------------------------------------------------------------
-
-interface IgnoreRule {
-  regex: RegExp;
-}
-
-function parseGitignore(content: string): IgnoreRule[] {
-  const rules: IgnoreRule[] = [];
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("!")) {
-      continue;
+  private client(forceNew = false): GitHubClient {
+    const { pat } = this.requirePat("操作");
+    const normalized = pat.trim();
+    if (forceNew || !this.cachedClient || this.cachedClient.pat !== normalized) {
+      this.cachedClient = { pat: normalized, client: new GitHubClient(normalized) };
     }
-    const pattern = trimmed.replace(/\/$/, "");
-    rules.push({ regex: gitignoreRegex(pattern) });
+    return this.cachedClient.client;
   }
-  return rules;
-}
 
-function gitignoreRegex(pattern: string): RegExp {
-  const body = pattern.replace(/^\//, "");
-  const hasSlash = body.includes("/");
-  const escaped = body
-    .split("/")
-    .map((segment) => segment.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*"))
-    .join("/");
-  if (hasSlash) {
-    return new RegExp(`^${escaped}(/.*)?$`);
+  private requirePat(action: string): PluginSettings {
+    const settings = this.deps.getSettings();
+    if (!settings.pat.trim()) {
+      throw new Error(`请先填写 GitHub PAT，再${action}。`);
+    }
+    return settings;
   }
-  // A bare name matches at any depth.
-  return new RegExp(`(^|/)${escaped}(/.*)?$`);
+
+  private requireVerifiedPat(action: string): PluginSettings {
+    const settings = this.requirePat(action);
+    if (this.verifiedPat !== settings.pat.trim()) {
+      throw new Error(`请先点击「检测连通性」验证当前 PAT，再${action}。`);
+    }
+    return settings;
+  }
+
+  private requireVerifiedRepositoryNames(action: string): PluginSettings {
+    const settings = this.requireVerifiedPat(action);
+    if (!settings.repoName.trim()) {
+      throw new Error("请先填写文章仓库名。");
+    }
+    if (!settings.blogRepoName.trim()) {
+      throw new Error("请先填写博客仓库名。");
+    }
+    return settings;
+  }
 }
 
-function isIgnored(path: string, rules: IgnoreRule[]): boolean {
-  return rules.some((rule) => rule.regex.test(path));
+function validateRepoName(value: string, label: string): string {
+  const name = value.trim();
+  if (!name) {
+    throw new Error(`请先填写${label}名。`);
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) {
+    throw new Error(`${label}名只能包含字母、数字、点、下划线和连字符。`);
+  }
+  return name;
 }
 
-function yieldToUi(): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, 0));
+function sanitizeRepoName(value: string, fallback: string): string {
+  const cleaned = value
+    .trim()
+    .replace(/[^A-Za-z0-9._-]/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned || fallback;
 }
 
-function isNotFound(error: unknown): boolean {
-  return error instanceof GitHubApiError && error.status === 404;
+function repositoryFullName(repository: GitHubRepositoryRef): string {
+  return `${repository.owner}/${repository.name}`;
 }
 
 function parseGitHubRemote(config: string): GitHubRepositoryRef | null {
@@ -468,18 +473,10 @@ function authenticatedGitHubUrl(repository: GitHubRepositoryRef, pat: string): s
   return `https://${owner}:${token}@github.com/${repository.owner}/${repository.name}.git`;
 }
 
-function sanitizeRepoName(name: string): string {
-  const cleaned = name
-    .trim()
-    .replace(/[^A-Za-z0-9._-]/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return cleaned || "my-blog";
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error);
 }
 
-function parseRepoRef(value: string): GitHubRepositoryRef {
-  const match = value.trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
-  if (!match) {
-    throw new Error(`主题仓库格式应为 owner/repository：${value}`);
-  }
-  return { owner: match[1], name: match[2] };
+function wait(durationMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }

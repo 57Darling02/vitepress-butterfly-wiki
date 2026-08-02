@@ -27,19 +27,11 @@ export default class VitePressButterflyPublisher extends Plugin {
 		this.addSettingTab(
 			new PublisherSettingsTab(this.app, this, () => this.settings, (changes) => this.updateSettings(changes), {
 				onCheckPat: () => this.blog.checkPat(),
-				onCheckContentRepo: () => this.blog.checkContentRepo(),
-				onCheckBlogRepo: () => this.blog.checkBlogRepo(),
-				onCheckReady: () => this.blog.checkReady(),
-				onSetup: () => this.blog.setup(),
+				onConfigureArticleRepository: () => this.blog.configureArticleRepository(),
+				onConfigureBlogRepository: () => this.blog.configureBlogRepository(),
 				onTrigger: () => this.blog.triggerDeploy(),
 			}),
 		);
-
-		this.addCommand({
-			id: "setup-blog",
-			name: "部署主题（推送本地内容并触发构建）",
-			callback: () => this.runWithFeedback("部署主题", () => this.blog.setup()),
-		});
 		this.addCommand({
 			id: "trigger-deploy",
 			name: "触发博客重建",
@@ -61,10 +53,24 @@ export default class VitePressButterflyPublisher extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData()) };
+		const saved = (await this.loadData()) as Partial<PluginSettings> | null;
+		this.settings = {
+			...DEFAULT_SETTINGS,
+			pat: saved?.pat ?? "",
+			repoName: saved?.repoName ?? "",
+			blogRepoName: saved?.blogRepoName ?? "",
+			pendingArticleRepo: saved?.pendingArticleRepo ?? "",
+			pendingBlogRepo: saved?.pendingBlogRepo ?? "",
+		};
 	}
 
 	async updateSettings(changes: Partial<PluginSettings>): Promise<void> {
+		if (
+			changes.pat !== undefined
+			&& changes.pat.trim() !== this.settings.pat.trim()
+		) {
+			this.blog.invalidatePat();
+		}
 		this.settings = { ...this.settings, ...changes };
 		await this.saveData(this.settings);
 	}

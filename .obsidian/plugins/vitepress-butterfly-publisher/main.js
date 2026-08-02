@@ -3005,9 +3005,8 @@ var DEFAULT_SETTINGS = {
   pat: "",
   repoName: "",
   blogRepoName: "",
-  themeRepo: "57Darling02/VitePress_butterfly",
-  configurePages: true,
-  publishedPaths: []
+  pendingArticleRepo: "",
+  pendingBlogRepo: ""
 };
 var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin, getSettings, saveSettings, actions) {
@@ -3015,198 +3014,247 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.getSettings = getSettings;
     this.saveSettings = saveSettings;
     this.actions = actions;
-    this.actionButtons = [];
+    this.verifiedPat = "";
+    this.verifiedLogin = "";
+    this.repositoryControls = [];
+    this.isPatChecking = false;
     this.isActionRunning = false;
   }
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    this.actionButtons = [];
+    this.repositoryControls = [];
+    this.patButton = void 0;
+    this.patInput = void 0;
+    this.repositorySection = void 0;
     containerEl.createEl("h2", { text: "VitePress Butterfly \u53D1\u5E03" });
     containerEl.createEl("p", {
-      text: "\u672C\u63D2\u4EF6\u8D1F\u8D23\u521D\u59CB\u5316\u4E0E\u90E8\u7F72\uFF1A\u521B\u5EFA\u4ED3\u5E93\u3001\u63A8\u9001\u672C\u5730\u5185\u5BB9\u3001\u914D\u7F6E secrets\u3001\u90E8\u7F72\u4E3B\u9898\u3002\u65E5\u5E38\u7684\u53D1\u5E03\u4E0E\u62C9\u53D6\u8BF7\u4F7F\u7528\u5185\u7F6E\u7684 obsidian-git \u63D2\u4EF6\uFF08\u684C\u9762\u7AEF\u4E0E\u79FB\u52A8\u7AEF\u5747\u53EF\uFF09\u3002"
+      text: "\u9996\u6B21\u4F7F\u7528\u53EA\u9700\u4F9D\u6B21\u5B8C\u6210\uFF1A\u9A8C\u8BC1 PAT \u2192 \u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93 \u2192 \u914D\u7F6E\u535A\u5BA2\u4ED3\u5E93\u3002\u7F51\u7EDC\u4E2D\u65AD\u65F6\u91CD\u65B0\u70B9\u51FB\u5F53\u524D\u6309\u94AE\u5373\u53EF\uFF0C\u4E0D\u4F1A\u91CD\u590D\u521B\u5EFA\u4ED3\u5E93\u3002"
     });
+    this.renderPat(containerEl);
+    this.renderRepositories(containerEl);
+    this.updateAvailability();
+  }
+  renderPat(containerEl) {
+    containerEl.createEl("h3", { text: "1. \u8FDE\u63A5 GitHub" });
+    const setting = new import_obsidian.Setting(containerEl).setName("GitHub PAT").setDesc("\u4F7F\u7528\u5177\u6709 repo + workflow \u6743\u9650\u7684 Tokens (classic)\uFF1B\u4EC5\u4FDD\u5B58\u5728\u672C\u673A\u548C GitHub \u52A0\u5BC6 secrets \u4E2D\u3002");
+    const status = this.createStatus(setting.descEl);
     const settings = this.getSettings();
-    const patSetting = new import_obsidian.Setting(containerEl).setName("GitHub PAT").setDesc("\u9700\u8981 repo + workflow \u6743\u9650\uFF0C\u4EC5\u4FDD\u5B58\u5728\u672C\u673A\u3002");
-    const patStatus = this.createStatus(patSetting.descEl);
-    patSetting.addText((text) => {
+    if (this.isPatVerified()) {
+      this.setStatus(status, "ok", `\u2713 \u5DF2\u8FDE\u63A5 @${this.verifiedLogin}`);
+    }
+    setting.addText((text) => {
+      this.patInput = text;
       text.inputEl.type = "password";
       text.inputEl.autocomplete = "off";
       text.inputEl.spellcheck = false;
-      this.bindText(text, "pat", settings.pat, (value) => value.trim());
-    }).addExtraButton((button) => {
-      this.addCheckButton(
-        button,
-        patStatus,
-        "\u68C0\u6D4B\u8FDE\u901A\u6027",
-        "\u6B63\u5728\u8FDE\u63A5 GitHub\u2026",
-        () => this.actions.onCheckPat(),
-        (login) => this.setStatus(patStatus, "ok", `\u2713 \u5DF2\u8FDE\u63A5 @${login}`),
-        "\u8FDE\u63A5\u5931\u8D25"
-      );
+      text.setPlaceholder("ghp_...");
+      text.setValue(settings.pat);
+      text.onChange((value) => {
+        const normalized = value.trim();
+        void this.saveSettings({ pat: normalized }).catch((error) => {
+          new import_obsidian.Notice(this.errorMessage(error, "\u4FDD\u5B58 PAT \u5931\u8D25"));
+        });
+        if (normalized !== this.verifiedPat) {
+          this.verifiedPat = "";
+          this.verifiedLogin = "";
+          this.setStatus(
+            status,
+            normalized ? "warn" : "error",
+            normalized ? "PAT \u5DF2\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u68C0\u6D4B" : "\u8BF7\u5148\u8F93\u5165 PAT"
+          );
+          this.updateAvailability();
+        }
+      });
+    }).addButton((button) => {
+      this.patButton = button;
+      button.setButtonText("\u68C0\u6D4B\u8FDE\u901A\u6027").setCta();
+      button.onClick(() => {
+        void this.runPatCheck(button, status);
+      });
     });
-    const contentSetting = new import_obsidian.Setting(containerEl).setName("\u535A\u5BA2\u6587\u7AE0\u4ED3\u5E93").setDesc("\u5F53\u524D Vault \u5BF9\u5E94\u7684\u6587\u7AE0\u4ED3\u5E93\uFF1B\u7559\u7A7A\u81EA\u52A8\u8BC6\u522B\uFF08Git \u514B\u9686\u76EE\u5F55\u6216 Vault \u540D\u79F0\uFF09\u3002");
-    const contentStatus = this.createStatus(contentSetting.descEl);
-    contentSetting.addText((text) => {
-      text.setPlaceholder("\u81EA\u52A8\u8BC6\u522B");
-      this.bindText(text, "repoName", settings.repoName, (value) => value.trim());
-    }).addExtraButton((button) => {
-      this.addCheckButton(
-        button,
-        contentStatus,
-        "\u68C0\u6D4B\u4ED3\u5E93",
-        "\u6B63\u5728\u68C0\u6D4B\u6587\u7AE0\u4ED3\u5E93\u2026",
-        () => this.actions.onCheckContentRepo(),
-        (result) => this.setStatus(
-          contentStatus,
-          result.ready ? "ok" : "error",
-          result.ready ? `\u2713 \u5DF2\u5C31\u7EEA\uFF1A\u672C\u5730\u5185\u5BB9\u5C06\u63A8\u9001\u5230 ${result.repository?.owner}/${result.repository?.name}` : "\u2717 \u672A\u89E3\u6790\u51FA\u4ED3\u5E93\u540D\uFF1A\u8BF7\u5728\u4E0A\u65B9\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D"
-        ),
-        "\u6587\u7AE0\u4ED3\u5E93\u68C0\u6D4B\u5931\u8D25"
-      );
+  }
+  renderRepositories(containerEl) {
+    this.repositorySection = containerEl.createDiv({ cls: "vpb-repository-section" });
+    this.repositorySection.createEl("h3", { text: "2. \u914D\u7F6E\u4ED3\u5E93" });
+    const hint = this.repositorySection.createEl("p", {
+      cls: "vitepress-butterfly-publisher-hint",
+      text: this.isPatVerified() ? "\u4ED3\u5E93\u5DF2\u5B58\u5728\u65F6\u53EA\u66F4\u65B0\u73AF\u5883\u53D8\u91CF\uFF0C\u4E0D\u4FEE\u6539\u4ED3\u5E93\u5185\u5BB9\uFF1B\u4ED3\u5E93\u4E0D\u5B58\u5728\u65F6\u624D\u6267\u884C\u521D\u59CB\u5316\u3002" : "\u{1F512} PAT \u8FDE\u901A\u6027\u68C0\u6D4B\u901A\u8FC7\u540E\u5373\u53EF\u586B\u5199\u548C\u914D\u7F6E\u4ED3\u5E93\u3002"
     });
-    const blogSetting = new import_obsidian.Setting(containerEl).setName("\u535A\u5BA2\u6837\u5F0F\u4ED3\u5E93").setDesc("Setup \u521B\u5EFA\u7684\u516C\u5F00\u535A\u5BA2\u4ED3\u5E93\uFF1B\u7559\u7A7A\u9ED8\u8BA4 \u4F60\u7684\u7528\u6237\u540D.github.io\u3002");
+    hint.setAttribute("aria-live", "polite");
+    const settings = this.getSettings();
+    const articleSetting = new import_obsidian.Setting(this.repositorySection).setName("\u6587\u7AE0\u4ED3\u5E93").setDesc("\u4FDD\u5B58\u6587\u7AE0\u548C\u7AD9\u70B9\u914D\u7F6E\u7684\u79C1\u5BC6\u4ED3\u5E93\u3002\u4E0D\u5B58\u5728\u65F6\u4E0A\u4F20\u5F53\u524D Vault\uFF1B\u5DF2\u5B58\u5728\u65F6\u4EC5\u66F4\u65B0 BLOG_REPO \u548C PAT\u3002");
+    const articleStatus = this.createStatus(articleSetting.descEl);
+    articleSetting.addText((text) => {
+      text.setPlaceholder("my-blog-wiki");
+      this.bindRepositoryName(text, "repoName", settings.repoName, articleStatus);
+      this.repositoryControls.push(text);
+    }).addButton((button) => {
+      button.setButtonText("\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93");
+      this.repositoryControls.push(button);
+      button.onClick(() => {
+        void this.runRepositoryAction(
+          button,
+          articleStatus,
+          "\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93",
+          "\u914D\u7F6E\u4E2D\u2026",
+          this.actions.onConfigureArticleRepository,
+          (result) => result.created ? `\u2713 \u5DF2\u521B\u5EFA\u3001\u4E0A\u4F20\u5E76\u914D\u7F6E ${this.fullName(result)}` : result.initialized ? `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u9996\u6B21\u4E0A\u4F20\u4E0E\u914D\u7F6E` : `\u2713 ${this.fullName(result)} \u5DF2\u5B58\u5728\uFF0C\u4EC5\u66F4\u65B0\u4E86\u73AF\u5883\u53D8\u91CF`
+        );
+      });
+    });
+    const blogSetting = new import_obsidian.Setting(this.repositorySection).setName("\u535A\u5BA2\u4ED3\u5E93").setDesc("\u516C\u5F00\u7684\u535A\u5BA2\u4E3B\u9898\u4ED3\u5E93\u3002\u4E0D\u5B58\u5728\u65F6\u4ECE\u5B98\u65B9\u6A21\u677F\u521B\u5EFA\uFF1B\u5DF2\u5B58\u5728\u65F6\u4EC5\u66F4\u65B0 WIKI_URL \u548C PAT\u3002");
     const blogStatus = this.createStatus(blogSetting.descEl);
     blogSetting.addText((text) => {
       text.setPlaceholder("yourname.github.io");
-      this.bindText(text, "blogRepoName", settings.blogRepoName, (value) => value.trim());
-    }).addExtraButton((button) => {
-      this.addCheckButton(
-        button,
-        blogStatus,
-        "\u68C0\u6D4B\u4ED3\u5E93",
-        "\u6B63\u5728\u68C0\u6D4B\u6837\u5F0F\u4ED3\u5E93\u2026",
-        () => this.actions.onCheckBlogRepo(),
-        (result) => this.setStatus(
+      this.bindRepositoryName(text, "blogRepoName", settings.blogRepoName, blogStatus);
+      this.repositoryControls.push(text);
+    }).addButton((button) => {
+      button.setButtonText("\u914D\u7F6E\u535A\u5BA2\u4ED3\u5E93").setCta();
+      this.repositoryControls.push(button);
+      button.onClick(() => {
+        void this.runRepositoryAction(
+          button,
           blogStatus,
-          "ok",
-          `\u2713 \u5DF2\u5C31\u7EEA\uFF1A${result.repository?.name}\uFF08\u4E0D\u5B58\u5728\u5C06\u81EA\u52A8\u521B\u5EFA\uFF0C\u5DF2\u5B58\u5728\u5C06\u8986\u76D6\u4E3A\u6700\u65B0\u4E3B\u9898\uFF09`
-        ),
-        "\u6837\u5F0F\u4ED3\u5E93\u68C0\u6D4B\u5931\u8D25"
-      );
-    });
-    const readySetting = new import_obsidian.Setting(containerEl).setName("\u5C31\u7EEA\u68C0\u6D4B").setDesc("\u4E24\u4E2A\u4ED3\u5E93\u5747\u89E3\u6790\u51FA\u540D\u5B57\u540E\uFF0C\u5373\u53EF\u6267\u884C\u300C\u90E8\u7F72\u4E3B\u9898\u300D\u3002");
-    const readyStatus = this.createStatus(readySetting.descEl);
-    readySetting.addExtraButton((button) => {
-      this.addCheckButton(
-        button,
-        readyStatus,
-        "\u68C0\u6D4B\u5C31\u7EEA\u72B6\u6001",
-        "\u6B63\u5728\u68C0\u67E5\u90E8\u7F72\u914D\u7F6E\u2026",
-        () => this.actions.onCheckReady(),
-        () => this.setStatus(
-          readyStatus,
-          "ok",
-          "\u2713 \u53CC\u4ED3\u5E93\u5DF2\u5C31\u7EEA\uFF0C\u70B9\u51FB\u300C\u90E8\u7F72\u4E3B\u9898\u300D\u5B8C\u6210\u521D\u59CB\u5316\u4E0E\u9996\u6B21\u90E8\u7F72"
-        ),
-        "\u5C31\u7EEA\u68C0\u6D4B\u5931\u8D25"
-      );
-    });
-    new import_obsidian.Setting(containerEl).setName("\u4E3B\u9898\u4ED3\u5E93").setDesc("\u300C\u90E8\u7F72\u4E3B\u9898\u300D\u65F6\u5FEB\u7167\u5230\u535A\u5BA2\u4ED3\u5E93\u7684\u4E3B\u9898\u6E90\u4ED3\u5E93\uFF08\u4E00\u6B21\u6027\u7684\uFF0C\u4E4B\u540E\u4E0D\u81EA\u52A8\u8DDF\u968F\uFF09\uFF0C\u4E00\u822C\u65E0\u9700\u4FEE\u6539\u3002").addText((text) => {
-      text.setPlaceholder("57Darling02/VitePress_butterfly");
-      this.bindText(text, "themeRepo", settings.themeRepo, (value) => value.trim());
-    });
-    new import_obsidian.Setting(containerEl).setName("\u542F\u7528 GitHub Pages").setDesc("Setup \u65F6\u5C1D\u8BD5\u628A\u535A\u5BA2\u4ED3\u5E93\u7684 Pages \u914D\u7F6E\u4E3A GitHub Actions \u6784\u5EFA\u3002").addToggle((toggle) => {
-      toggle.setValue(settings.configurePages);
-      toggle.onChange((value) => {
-        void this.saveSettings({ configurePages: value }).catch((error) => {
-          new import_obsidian.Notice(this.errorMessage(error, "\u4FDD\u5B58\u8BBE\u7F6E\u5931\u8D25"));
-        });
+          "\u914D\u7F6E\u535A\u5BA2\u4ED3\u5E93",
+          "\u914D\u7F6E\u4E2D\u2026",
+          this.actions.onConfigureBlogRepository,
+          (result) => result.created ? `\u2713 \u5DF2\u4ECE\u6A21\u677F\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : result.initialized ? `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u9996\u6B21\u914D\u7F6E` : `\u2713 ${this.fullName(result)} \u5DF2\u5B58\u5728\uFF0C\u4EC5\u66F4\u65B0\u4E86\u73AF\u5883\u53D8\u91CF`
+        );
       });
     });
-    containerEl.createEl("h3", { text: "\u64CD\u4F5C" });
-    this.addAction(containerEl, "\u90E8\u7F72\u4E3B\u9898", "\u5C06\u672C\u5730\u5185\u5BB9\u63A8\u9001\u5230\u6587\u7AE0\u4ED3\u5E93\uFF08\u8986\u76D6\u4E91\u7AEF\uFF09\uFF0C\u914D\u7F6E\u535A\u5BA2\u4ED3\u5E93 secrets \u4E0E Pages\uFF0C\u5E76\u89E6\u53D1\u9996\u6B21\u6784\u5EFA\u3002", "\u90E8\u7F72\u4E2D...", this.actions.onSetup);
-    this.addAction(containerEl, "\u89E6\u53D1\u90E8\u7F72", "\u76F4\u63A5\u901A\u77E5\u535A\u5BA2\u4ED3\u5E93\u91CD\u65B0\u6784\u5EFA\u90E8\u7F72\uFF08\u53D1\u5E03\u8BF7\u7528 obsidian-git \u7684 Push\uFF09\u3002", "\u89E6\u53D1\u4E2D...", this.actions.onTrigger);
+    this.repositorySection.createEl("h3", { text: "\u65E5\u5E38\u64CD\u4F5C" });
+    new import_obsidian.Setting(this.repositorySection).setName("\u91CD\u65B0\u6784\u5EFA\u535A\u5BA2").setDesc("\u901A\u5E38\u65E0\u9700\u624B\u52A8\u6267\u884C\uFF1B\u6587\u7AE0\u4ED3\u5E93 Push \u540E\u4F1A\u81EA\u52A8\u89E6\u53D1\u3002").addButton((button) => {
+      button.setButtonText("\u89E6\u53D1\u6784\u5EFA");
+      this.repositoryControls.push(button);
+      button.onClick(() => {
+        void this.runSimpleAction(button, "\u89E6\u53D1\u6784\u5EFA", "\u89E6\u53D1\u4E2D\u2026", this.actions.onTrigger);
+      });
+    });
+  }
+  bindRepositoryName(text, key, value, status) {
+    text.setValue(value);
+    text.onChange((nextValue) => {
+      void this.saveSettings({ [key]: nextValue.trim() }).catch((error) => {
+        new import_obsidian.Notice(this.errorMessage(error, "\u4FDD\u5B58\u4ED3\u5E93\u540D\u5931\u8D25"));
+      });
+      this.setStatus(status, "warn", "\u4ED3\u5E93\u540D\u5DF2\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u914D\u7F6E");
+    });
+  }
+  async runPatCheck(button, status) {
+    if (this.isPatChecking || this.isActionRunning) {
+      return;
+    }
+    const patAtStart = this.getSettings().pat.trim();
+    if (!patAtStart) {
+      this.setStatus(status, "error", "\u2717 \u8BF7\u5148\u8F93\u5165 PAT");
+      return;
+    }
+    this.isPatChecking = true;
+    this.updateAvailability();
+    button.setButtonText("\u68C0\u6D4B\u4E2D\u2026");
+    this.setStatus(status, "loading", "\u6B63\u5728\u8FDE\u63A5 GitHub\u2026");
+    await yieldToUi();
+    try {
+      const result = await this.actions.onCheckPat();
+      if (this.getSettings().pat.trim() !== patAtStart) {
+        throw new Error("PAT \u5DF2\u5728\u68C0\u6D4B\u8FC7\u7A0B\u4E2D\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u68C0\u6D4B\u3002");
+      }
+      const changes = {};
+      const settings = this.getSettings();
+      if (!settings.repoName.trim()) {
+        changes.repoName = result.suggestedArticleRepoName;
+      }
+      if (!settings.blogRepoName.trim()) {
+        changes.blogRepoName = result.suggestedBlogRepoName;
+      }
+      if (Object.keys(changes).length > 0) {
+        await this.saveSettings(changes);
+      }
+      this.verifiedPat = patAtStart;
+      this.verifiedLogin = result.login;
+      this.display();
+    } catch (error) {
+      this.verifiedPat = "";
+      this.verifiedLogin = "";
+      this.setStatus(status, "error", `\u2717 ${this.errorMessage(error, "\u8FDE\u63A5\u5931\u8D25")}`);
+    } finally {
+      this.isPatChecking = false;
+      if (this.patButton) {
+        this.patButton.setButtonText("\u68C0\u6D4B\u8FDE\u901A\u6027");
+      }
+      this.updateAvailability();
+    }
+  }
+  async runRepositoryAction(button, status, label, pendingLabel, action, successMessage) {
+    if (!this.isPatVerified() || this.isActionRunning) {
+      return;
+    }
+    this.isActionRunning = true;
+    button.setButtonText(pendingLabel);
+    this.setStatus(status, "loading", `${pendingLabel} \u7F51\u7EDC\u4E2D\u65AD\u65F6\u53EF\u76F4\u63A5\u91CD\u8BD5`);
+    this.updateAvailability();
+    await yieldToUi();
+    try {
+      const result = await action();
+      this.setStatus(
+        status,
+        result.warning ? "warn" : "ok",
+        result.warning ? `${successMessage(result)}\uFF1B${result.warning}` : successMessage(result)
+      );
+      new import_obsidian.Notice(`${label}\u5B8C\u6210\u3002`, 4e3);
+    } catch (error) {
+      this.setStatus(status, "error", `\u2717 ${this.errorMessage(error, `${label}\u5931\u8D25`)}`);
+    } finally {
+      this.isActionRunning = false;
+      button.setButtonText(label);
+      this.updateAvailability();
+    }
+  }
+  async runSimpleAction(button, label, pendingLabel, action) {
+    if (!this.isPatVerified() || this.isActionRunning) {
+      return;
+    }
+    this.isActionRunning = true;
+    button.setButtonText(pendingLabel);
+    this.updateAvailability();
+    await yieldToUi();
+    try {
+      await action();
+    } catch (error) {
+      new import_obsidian.Notice(this.errorMessage(error, `${label}\u5931\u8D25`), 8e3);
+    } finally {
+      this.isActionRunning = false;
+      button.setButtonText(label);
+      this.updateAvailability();
+    }
+  }
+  updateAvailability() {
+    const repositoriesEnabled = this.isPatVerified() && !this.isActionRunning && !this.isPatChecking;
+    this.repositoryControls.forEach((control) => control.setDisabled(!repositoriesEnabled));
+    this.repositorySection?.toggleClass("is-locked", !this.isPatVerified());
+    this.patInput?.setDisabled(this.isPatChecking || this.isActionRunning);
+    this.patButton?.setDisabled(this.isPatChecking || this.isActionRunning);
+  }
+  isPatVerified() {
+    return Boolean(this.verifiedPat) && this.getSettings().pat.trim() === this.verifiedPat;
   }
   createStatus(containerEl) {
     const span = containerEl.createSpan({ cls: "vitepress-butterfly-check-status" });
-    span.textContent = "\u672A\u68C0\u6D4B";
+    span.textContent = "\u672A\u914D\u7F6E";
     span.setAttribute("aria-live", "polite");
     return span;
   }
   setStatus(el, kind, message) {
     el.textContent = message;
     el.removeClass("vpb-loading", "vpb-ok", "vpb-warn", "vpb-error");
-    el.addClass(
-      kind === "loading" ? "vpb-loading" : kind === "ok" ? "vpb-ok" : kind === "warn" ? "vpb-warn" : "vpb-error"
-    );
+    el.addClass(`vpb-${kind}`);
   }
-  addCheckButton(button, statusEl, tooltip, pendingMessage, run, onSuccess, failureLabel) {
-    button.setIcon("search").setTooltip(tooltip);
-    button.onClick(() => {
-      void this.runCheck(
-        button,
-        statusEl,
-        tooltip,
-        pendingMessage,
-        run,
-        onSuccess,
-        failureLabel
-      );
-    });
-  }
-  async runCheck(button, statusEl, tooltip, pendingMessage, run, onSuccess, failureLabel) {
-    if (button.extraSettingsEl.classList.contains("vpb-check-running")) {
-      return;
-    }
-    button.setDisabled(true).setIcon("loader-2").setTooltip(pendingMessage);
-    button.extraSettingsEl.classList.add("vpb-check-running");
-    button.extraSettingsEl.setAttribute("aria-busy", "true");
-    this.setStatus(statusEl, "loading", pendingMessage);
-    await yieldToUi();
-    try {
-      onSuccess(await run());
-    } catch (error) {
-      const detail = this.errorMessage(error, failureLabel);
-      this.setStatus(
-        statusEl,
-        "error",
-        detail === failureLabel ? `\u2717 ${failureLabel}` : `\u2717 ${failureLabel}\uFF1A${detail}`
-      );
-    } finally {
-      button.setDisabled(false).setIcon("search").setTooltip(tooltip);
-      button.extraSettingsEl.classList.remove("vpb-check-running");
-      button.extraSettingsEl.removeAttribute("aria-busy");
-    }
-  }
-  bindText(text, key, value, normalize) {
-    text.setValue(value);
-    text.onChange((nextValue) => {
-      void this.saveSettings({ [key]: normalize(nextValue) }).catch((error) => {
-        new import_obsidian.Notice(this.errorMessage(error, "\u4FDD\u5B58\u8BBE\u7F6E\u5931\u8D25"));
-      });
-    });
-  }
-  addAction(containerEl, name, description, pendingLabel, action, isCta = false) {
-    new import_obsidian.Setting(containerEl).setName(name).setDesc(description).addButton((button) => {
-      button.setButtonText(name);
-      if (isCta) {
-        button.setCta();
-      }
-      this.actionButtons.push(button);
-      button.onClick(() => this.runAction(button, name, pendingLabel, action));
-    });
-  }
-  async runAction(button, label, pendingLabel, action) {
-    if (this.isActionRunning) {
-      return;
-    }
-    this.isActionRunning = true;
-    this.actionButtons.forEach((item) => item.setDisabled(true));
-    button.setButtonText(pendingLabel);
-    await yieldToUi();
-    try {
-      await action();
-    } catch (error) {
-      new import_obsidian.Notice(this.errorMessage(error, `${label}\u5931\u8D25`));
-    } finally {
-      this.isActionRunning = false;
-      this.actionButtons.forEach((item) => item.setDisabled(false));
-      button.setButtonText(label);
-    }
+  fullName(result) {
+    return `${result.repository.owner}/${result.repository.name}`;
   }
   errorMessage(error, fallback) {
-    return error instanceof Error && error.message ? error.message : fallback;
+    return error instanceof Error && error.message ? error.message.trim() : fallback;
   }
 };
 function yieldToUi() {
@@ -3230,7 +3278,6 @@ var import_obsidian2 = require("obsidian");
 var API_URL = "https://api.github.com";
 var API_VERSION = "2022-11-28";
 var REQUEST_TIMEOUT_MS = 15e3;
-var WORKFLOW_MATCH_TOLERANCE_MS = 5e3;
 var GitHubApiError = class extends Error {
   constructor(message, status, url) {
     super(message);
@@ -3241,30 +3288,26 @@ var GitHubApiError = class extends Error {
 };
 var GitHubRequestTimeoutError = class extends Error {
   constructor(timeoutMs, url) {
-    super(`\u8FDE\u63A5 GitHub \u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\uFF09\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u6216\u4EE3\u7406\u540E\u91CD\u8BD5\u3002`);
+    super(`\u8FDE\u63A5 GitHub \u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\uFF09\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u91CD\u8BD5\u3002`);
     this.timeoutMs = timeoutMs;
     this.url = url;
     this.name = "GitHubRequestTimeoutError";
-  }
-};
-var WorkflowRunTimeoutError = class extends Error {
-  constructor(workflow, timeoutMs, lastRun) {
-    super(`\u7B49\u5F85\u5DE5\u4F5C\u6D41 ${workflow} \u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\uFF09\u3002`);
-    this.workflow = workflow;
-    this.timeoutMs = timeoutMs;
-    this.lastRun = lastRun;
-    this.name = "WorkflowRunTimeoutError";
   }
 };
 var GitHubClient = class {
   constructor(token) {
     this.token = token.trim();
     if (!this.token) {
-      throw new Error("A GitHub personal access token is required.");
+      throw new Error("\u8BF7\u5148\u586B\u5199 GitHub PAT\u3002");
     }
   }
   getAuthenticatedUser() {
-    this.authenticatedUser ??= this.loadAuthenticatedUser();
+    if (!this.authenticatedUser) {
+      this.authenticatedUser = this.loadAuthenticatedUser().catch((error) => {
+        this.authenticatedUser = void 0;
+        throw error;
+      });
+    }
     return this.authenticatedUser;
   }
   async loadAuthenticatedUser() {
@@ -3279,265 +3322,55 @@ var GitHubClient = class {
     const result = await this.request(this.repositoryPath(repository));
     return this.toRepository(result);
   }
-  /** Lists the authenticated user's repositories, most recently updated first. */
-  async listUserRepos() {
-    const result = await this.request("/user/repos", {
-      query: { per_page: 100, sort: "updated" }
-    });
-    return result.map((repo) => ({
-      owner: repo.owner.login,
-      name: repo.name
-    }));
-  }
-  /**
-   * Creates an empty repository (with a README so a default branch exists)
-   * under the authenticated user. No template and no fork relationship.
-   */
   async createRepository(options) {
     const result = await this.request("/user/repos", {
       method: "POST",
       body: {
         name: options.name,
         private: options.private,
-        auto_init: true
+        auto_init: options.autoInit ?? true
       }
     });
     return this.toRepository(result);
   }
-  /** Reads a file via the Contents API; returns `null` when it does not exist. */
-  async getFileContent(repository, path) {
-    try {
-      return await this.request(
-        `${this.repositoryPath(repository)}/contents/${encodeURIComponent(path)}`
-      );
-    } catch (error) {
-      if (error instanceof GitHubApiError && error.status === 404) {
-        return null;
-      }
-      throw error;
-    }
-  }
-  async createBlob(repository, data) {
-    return this.request(
-      `${this.repositoryPath(repository)}/git/blobs`,
-      {
-        method: "POST",
-        body: { content: base64Encode(data), encoding: "base64" }
-      }
-    );
-  }
-  /** Creates a blob from already-encoded content (used when copying repos). */
-  async createBlobRaw(repository, content, encoding) {
-    return this.request(
-      `${this.repositoryPath(repository)}/git/blobs`,
-      {
-        method: "POST",
-        body: { content, encoding }
-      }
-    );
-  }
-  async createTree(repository, entries) {
-    return this.request(
-      `${this.repositoryPath(repository)}/git/trees`,
-      {
-        method: "POST",
-        body: { tree: entries }
-      }
-    );
-  }
-  async createCommit(repository, options) {
-    return this.request(
-      `${this.repositoryPath(repository)}/git/commits`,
+  async createRepositoryFromTemplate(template, options) {
+    const result = await this.request(
+      `${this.repositoryPath(template)}/generate`,
       {
         method: "POST",
         body: {
-          message: options.message,
-          tree: options.tree,
-          parents: options.parents ?? [],
-          author: options.author
+          owner: options.owner,
+          name: options.name,
+          private: options.private,
+          include_all_branches: false
         }
       }
     );
+    return this.toRepository(result);
   }
-  /** Moves (or creates, with force) the branch ref to a commit. */
-  async updateRef(repository, branch, sha) {
-    await this.request(
-      `${this.repositoryPath(repository)}/git/refs/heads/${encodeURIComponent(branch)}`,
-      { method: "PATCH", body: { sha, force: true } }
-    );
-  }
-  /**
-   * Overwrites the default branch with the given files: builds blobs/trees,
-   * creates a root commit and force-moves the branch ref. This is the API
-   * equivalent of a force push and works identically on desktop and mobile.
-   */
-  async pushFiles(repository, branch, files, options) {
-    const buildTree = async (dir) => {
-      const entries = [];
-      const children = /* @__PURE__ */ new Map();
-      for (const [path, data] of files) {
-        if (!path.startsWith(dir)) {
-          continue;
-        }
-        const rest = dir ? path.slice(dir.length) : path;
-        const slash = rest.indexOf("/");
-        if (slash === -1) {
-          entries.push({
-            path: rest,
-            mode: "100644",
-            type: "blob",
-            sha: (await this.createBlob(repository, data)).sha
-          });
-        } else {
-          const name = rest.slice(0, slash);
-          if (!children.has(name)) {
-            children.set(name, dir + name + "/");
-          }
-        }
-      }
-      for (const [name, childDir] of children) {
-        entries.push({
-          path: name,
-          mode: "040000",
-          type: "tree",
-          sha: await buildTree(childDir)
-        });
-      }
-      return (await this.createTree(repository, entries)).sha;
-    };
-    const treeSha = await buildTree("");
-    const commit = await this.createCommit(repository, {
-      message: options.message,
-      tree: treeSha,
-      author: {
-        name: options.authorName,
-        email: options.authorEmail,
-        date: (/* @__PURE__ */ new Date()).toISOString()
-      }
-    });
-    await this.updateRef(repository, branch, commit.sha);
-  }
-  /**
-   * Copies the source repository's default branch into the target
-   * repository, overwriting its default branch with the same file content
-   * (a one-time snapshot — the target does not track the source afterwards).
-   * Implemented purely with the Git Data API, so it works on any device.
-   */
-  async copyRepositoryBranch(from, to, options) {
-    const fromRepo = await this.getRepository(from);
-    const branch = fromRepo.defaultBranch;
-    const headCommit = await this.request(`${this.repositoryPath(from)}/commits/${encodeURIComponent(branch)}`);
-    const tree = await this.request(`${this.repositoryPath(from)}/git/trees/${headCommit.commit.tree.sha}?recursive=1`);
-    const blobShas = /* @__PURE__ */ new Map();
-    for (const entry of tree.tree) {
-      if (entry.type !== "blob") {
-        continue;
-      }
-      const blob = await this.request(
-        `${this.repositoryPath(from)}/git/blobs/${entry.sha}`
-      );
-      const created = await this.createBlobRaw(to, blob.content, blob.encoding);
-      blobShas.set(entry.sha, created.sha);
-    }
-    const buildTree = async (dir) => {
-      const entries = [];
-      const children = /* @__PURE__ */ new Map();
-      for (const entry of tree.tree) {
-        if (entry.type !== "blob" || !entry.path.startsWith(dir)) {
-          continue;
-        }
-        const rest = dir ? entry.path.slice(dir.length) : entry.path;
-        const slash = rest.indexOf("/");
-        if (slash === -1) {
-          entries.push({
-            path: rest,
-            mode: entry.mode,
-            type: "blob",
-            sha: blobShas.get(entry.sha) ?? ""
-          });
-        } else {
-          const name = rest.slice(0, slash);
-          if (!children.has(name)) {
-            children.set(name, dir + name + "/");
-          }
-        }
-      }
-      for (const [name, childDir] of children) {
-        entries.push({
-          path: name,
-          mode: "040000",
-          type: "tree",
-          sha: await buildTree(childDir)
-        });
-      }
-      return (await this.createTree(to, entries)).sha;
-    };
-    const treeSha = await buildTree("");
-    const commit = await this.createCommit(to, {
-      message: options.message,
-      tree: treeSha,
-      author: {
-        name: options.authorName,
-        email: options.authorEmail,
-        date: (/* @__PURE__ */ new Date()).toISOString()
-      }
-    });
-    const toRepo = await this.getRepository(to);
-    await this.updateRef(to, toRepo.defaultBranch, commit.sha);
-  }
-  async listSecrets(repository) {
-    const result = await this.request(
-      `${this.repositoryPath(repository)}/actions/secrets`
-    );
-    return result.secrets.map((secret) => secret.name);
-  }
-  async getActionsSecretPublicKey(repository) {
-    const result = await this.request(
+  /** Writes all secrets using one public-key request; retries are safe. */
+  async setActionsSecrets(repository, secrets) {
+    const key = await this.request(
       `${this.repositoryPath(repository)}/actions/secrets/public-key`
     );
-    return {
-      keyId: result.key_id,
-      key: result.key
-    };
-  }
-  async setActionsSecret(repository, name, value) {
-    const key = await this.getActionsSecretPublicKey(repository);
     const { encryptGitHubSecret: encryptGitHubSecret2 } = await Promise.resolve().then(() => (init_secret(), secret_exports));
-    const encryptedValue = await encryptGitHubSecret2(value, key.key);
-    await this.request(
-      `${this.repositoryPath(repository)}/actions/secrets/${encodeURIComponent(name)}`,
-      {
-        method: "PUT",
-        body: {
-          encrypted_value: encryptedValue,
-          key_id: key.keyId
-        }
-      }
+    await Promise.all(
+      Object.entries(secrets).map(async ([name, value]) => {
+        const encryptedValue = await encryptGitHubSecret2(value, key.key);
+        await this.request(
+          `${this.repositoryPath(repository)}/actions/secrets/${encodeURIComponent(name)}`,
+          {
+            method: "PUT",
+            body: {
+              encrypted_value: encryptedValue,
+              key_id: key.key_id
+            }
+          }
+        );
+      })
     );
   }
-  async deleteActionsSecret(repository, name) {
-    await this.request(
-      `${this.repositoryPath(repository)}/actions/secrets/${encodeURIComponent(name)}`,
-      { method: "DELETE" }
-    );
-  }
-  /** Enables GitHub Actions on a repository (works for plain repos and forks). */
-  async enableActions(repository) {
-    await this.request(
-      `${this.repositoryPath(repository)}/actions/permissions`,
-      {
-        method: "PUT",
-        body: {
-          enabled: true,
-          allowed_actions: "all"
-        }
-      }
-    );
-  }
-  /**
-   * Points the repository's GitHub Pages at Actions-built artifacts.
-   * Idempotent: creates the Pages site when missing, updates it otherwise.
-   */
+  /** Creates the Pages site when missing and selects GitHub Actions. */
   async configurePages(repository) {
     const path = `${this.repositoryPath(repository)}/pages`;
     try {
@@ -3557,74 +3390,15 @@ var GitHubClient = class {
       throw error;
     }
   }
-  /** Dispatches a repository_dispatch event (used to trigger rebuilds). */
   async dispatchRepositoryEvent(repository, eventType) {
     await this.request(`${this.repositoryPath(repository)}/dispatches`, {
       method: "POST",
       body: { event_type: eventType }
     });
   }
-  async dispatchWorkflow(repository, workflow, ref = "main", inputs = {}) {
-    await this.request(
-      `${this.repositoryPath(repository)}/actions/workflows/${encodeURIComponent(String(workflow))}/dispatches`,
-      {
-        method: "POST",
-        body: {
-          ref,
-          inputs: stringifyInputs(inputs)
-        }
-      }
-    );
-    return { dispatchedAt: /* @__PURE__ */ new Date() };
-  }
-  async getWorkflowRun(repository, runId) {
-    const result = await this.request(
-      `${this.repositoryPath(repository)}/actions/runs/${runId}`
-    );
-    return toWorkflowRun(result);
-  }
-  async listWorkflowRuns(repository, workflow, options = {}) {
-    const result = await this.request(
-      `${this.repositoryPath(repository)}/actions/workflows/${encodeURIComponent(String(workflow))}/runs`,
-      {
-        query: {
-          branch: options.branch,
-          event: options.event,
-          status: options.status,
-          per_page: options.perPage ?? 20
-        }
-      }
-    );
-    return result.workflow_runs.map(toWorkflowRun);
-  }
-  async waitForWorkflowRun(repository, workflow, options = {}) {
-    const timeoutMs = options.timeoutMs ?? 3e5;
-    const intervalMs = options.intervalMs ?? 2500;
-    const startedAfter = options.startedAfter?.getTime() ?? Date.now();
-    const deadline = Date.now() + timeoutMs;
-    let lastRun;
-    while (Date.now() < deadline) {
-      throwIfAborted(options.signal);
-      const runs = await this.listWorkflowRuns(repository, workflow, {
-        branch: options.branch,
-        event: options.event ?? "workflow_dispatch",
-        status: options.status,
-        perPage: options.perPage
-      });
-      const run = runs.find((candidate) => isNewEnough(candidate, startedAfter));
-      if (run) {
-        lastRun = run;
-        if (run.status === "completed") {
-          return run;
-        }
-      }
-      await wait(Math.min(intervalMs, Math.max(0, deadline - Date.now())));
-    }
-    throw new WorkflowRunTimeoutError(workflow, timeoutMs, lastRun);
-  }
   repositoryPath(repository) {
     if (!repository.owner || !repository.name) {
-      throw new Error("A GitHub repository requires both an owner and a name.");
+      throw new Error("GitHub \u4ED3\u5E93\u5FC5\u987B\u5305\u542B\u7528\u6237\u540D\u548C\u4ED3\u5E93\u540D\u3002");
     }
     return `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
   }
@@ -3650,11 +3424,7 @@ var GitHubClient = class {
       });
       const text = await response.text();
       if (!response.ok) {
-        throw new GitHubApiError(
-          apiMessage(text, response.status),
-          response.status,
-          url
-        );
+        throw new GitHubApiError(apiMessage(text, response.status), response.status, url);
       }
       if (response.status === 204 || text.length === 0) {
         return void 0;
@@ -3671,7 +3441,7 @@ var GitHubClient = class {
       if (timedOut || isAbortError(error)) {
         throw new GitHubRequestTimeoutError(REQUEST_TIMEOUT_MS, url);
       }
-      const networkError = new Error("\u65E0\u6CD5\u8FDE\u63A5 GitHub\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u3001\u4EE3\u7406\u6216 DNS \u8BBE\u7F6E\u540E\u91CD\u8BD5\u3002");
+      const networkError = new Error("\u65E0\u6CD5\u8FDE\u63A5 GitHub\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u3001\u4EE3\u7406\u6216 DNS \u540E\u91CD\u8BD5\u3002");
       networkError.cause = error;
       throw networkError;
     } finally {
@@ -3698,44 +3468,6 @@ var GitHubClient = class {
     };
   }
 };
-function stringifyInputs(inputs) {
-  return Object.fromEntries(
-    Object.entries(inputs).map(([name, value]) => [name, String(value)])
-  );
-}
-function toWorkflowRun(result) {
-  return {
-    id: result.id,
-    name: result.name,
-    status: result.status,
-    conclusion: result.conclusion,
-    event: result.event,
-    headBranch: result.head_branch,
-    htmlUrl: result.html_url,
-    createdAt: result.created_at,
-    updatedAt: result.updated_at
-  };
-}
-function isNewEnough(run, startedAfter) {
-  const createdAt = Date.parse(run.createdAt);
-  return Number.isNaN(createdAt) || createdAt >= startedAfter - WORKFLOW_MATCH_TOLERANCE_MS;
-}
-function throwIfAborted(signal) {
-  if (signal?.aborted) {
-    throw new Error("Workflow polling was cancelled.");
-  }
-}
-function wait(durationMs) {
-  return new Promise((resolve) => window.setTimeout(resolve, durationMs));
-}
-function base64Encode(bytes) {
-  let binary = "";
-  const chunkSize = 32768;
-  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
 function isAbortError(error) {
   return error instanceof DOMException && error.name === "AbortError";
 }
@@ -3744,13 +3476,13 @@ function apiMessage(body, status) {
     return "PAT \u65E0\u6548\u3001\u5DF2\u8FC7\u671F\u6216\u6743\u9650\u4E0D\u8DB3\u3002";
   }
   if (status === 403) {
-    return "GitHub \u62D2\u7EDD\u8BBF\u95EE\uFF0C\u8BF7\u68C0\u67E5 PAT \u6743\u9650\u6216 API \u9650\u989D\u3002";
+    return "GitHub \u62D2\u7EDD\u8BBF\u95EE\uFF1B\u8BF7\u4F7F\u7528\u5177\u6709 repo + workflow \u6743\u9650\u7684 Classic PAT\u3002";
   }
   if (status === 404) {
-    return "GitHub \u8D44\u6E90\u4E0D\u5B58\u5728\u6216\u5F53\u524D PAT \u65E0\u6743\u8BBF\u95EE\u3002";
+    return "GitHub \u8D44\u6E90\u4E0D\u5B58\u5728\uFF0C\u6216\u5F53\u524D PAT \u65E0\u6743\u8BBF\u95EE\u3002";
   }
   if (status === 422) {
-    return "\u4ED3\u5E93\u540D\u5DF2\u88AB\u5360\u7528\u6216\u8BF7\u6C42\u65E0\u6CD5\u5904\u7406\uFF0C\u8BF7\u66F4\u6362\u540D\u79F0\u540E\u91CD\u8BD5\u3002";
+    return "\u4ED3\u5E93\u540D\u5DF2\u88AB\u5360\u7528\u6216\u8BF7\u6C42\u65E0\u6CD5\u5904\u7406\uFF0C\u8BF7\u68C0\u67E5\u4ED3\u5E93\u540D\u540E\u91CD\u8BD5\u3002";
   }
   try {
     const payload = JSON.parse(body);
@@ -3763,169 +3495,221 @@ function apiMessage(body, status) {
 }
 
 // src/services/blog.ts
-var DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
+var BLOG_TEMPLATE = {
+  owner: "57Darling02",
+  name: "VitePress_butterfly"
+};
+var DEFAULT_BRANCH = "main";
 var BlogService = class {
   constructor(deps) {
     this.deps = deps;
+    this.verifiedPat = "";
   }
-  // ------------------------------------------------------------------
-  // Step checks: each is independent and only verifies its own concern.
-  // ------------------------------------------------------------------
-  /** 1. PAT connectivity only. Returns the authenticated login. */
+  /** Validates the PAT and supplies low-friction default repository names. */
   async checkPat() {
-    const client = this.client();
+    const settings = this.requirePat("\u68C0\u6D4B\u8FDE\u901A\u6027");
+    const pat = settings.pat.trim();
+    this.verifiedPat = "";
+    const client = this.client(true);
     const user = await client.getAuthenticatedUser();
-    return user.login;
-  }
-  /**
-   * 2. Content repository: resolve the target name (manual, local Git
-   *    remote, or Vault name). Existence does not matter — deploying will
-   *    create it and overwrite it with the local content.
-   */
-  async checkContentRepo() {
-    const client = this.client();
-    const { repository } = await this.detectContentRepository(client);
-    return { repository, ready: repository !== null };
-  }
-  /**
-   * 3. Blog repository: resolve the name only. Existence and content do not
-   *    matter — deploying creates it when missing, and every build overwrites
-   *    it with the latest theme.
-   */
-  async checkBlogRepo() {
-    const client = this.client();
-    const user = await client.getAuthenticatedUser();
-    const repository = {
-      owner: user.login,
-      name: this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login)
+    if (this.deps.getSettings().pat.trim() !== pat) {
+      throw new Error("PAT \u5DF2\u5728\u68C0\u6D4B\u8FC7\u7A0B\u4E2D\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u68C0\u6D4B\u3002");
+    }
+    this.verifiedPat = pat;
+    return {
+      login: user.login,
+      suggestedArticleRepoName: sanitizeRepoName(this.deps.app.vault.getName(), "my-blog-wiki"),
+      suggestedBlogRepoName: `${user.login}.github.io`
     };
-    return { repository, ready: true };
   }
-  /** 4. Readiness: both repositories must be resolvable before deploying. */
-  async checkReady() {
-    await this.checkContentRepo();
-    await this.checkBlogRepo();
+  invalidatePat() {
+    this.verifiedPat = "";
+    this.cachedClient = void 0;
   }
-  // ------------------------------------------------------------------
-  // Actions.
-  // ------------------------------------------------------------------
   /**
-   * Deploys the theme (a one-time snapshot, nothing tracks the theme
-   * afterwards):
+   * Configures the article repository.
    *
-   * 1. ensure the content repository exists (private, empty) and overwrite
-   *    its default branch with the local vault content (API force push);
-   * 2. ensure the blog repository exists (public) and snapshot the theme
-   *    source into it (existing content is overwritten, so a repository
-   *    that is "wrong" — e.g. another user's old blog — becomes correct);
-   * 3. enable Actions, write the secrets and configure Pages;
-   * 4. trigger the first build of the snapshot.
-   *
-   * Rerunning is safe: everything is idempotent, the local content always
-   * wins on the content repository, and the theme is re-snapshotted.
+   * Existing repository: only refresh BLOG_REPO and PAT.
+   * Missing repository: create a private empty repository, initialize/push the
+   * current Vault through obsidian-git, then write the same secrets.
    */
-  async setup() {
-    const { pat, blogRepoName, themeRepo, configurePages } = this.requireSettings("\u90E8\u7F72\u4E3B\u9898");
+  async configureArticleRepository() {
+    const settings = this.requireVerifiedRepositoryNames("\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93");
     const client = this.client();
     const user = await client.getAuthenticatedUser();
-    const content = await this.detectContentRepository(client);
-    if (!content.repository) {
-      throw new Error("\u672A\u89E3\u6790\u51FA\u6587\u7AE0\u4ED3\u5E93\u540D\uFF1A\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\uFF0C\u6216\u4ECE Git \u514B\u9686\u6253\u5F00\u672C\u76EE\u5F55\u3002");
+    const article = { owner: user.login, name: validateRepoName(settings.repoName, "\u6587\u7AE0\u4ED3\u5E93") };
+    const blogName = validateRepoName(settings.blogRepoName, "\u535A\u5BA2\u4ED3\u5E93");
+    const fullName = repositoryFullName(article);
+    let exists = await this.repositoryExists(client, article);
+    const pending = settings.pendingArticleRepo === fullName;
+    let created = false;
+    const shouldInitialize = !exists || pending;
+    let git;
+    if (shouldInitialize) {
+      await this.assertLocalRepositoryTarget(article);
+      git = await this.prepareLocalRepository(article, settings.pat);
     }
-    if (!await this.repositoryExists(client, content.repository)) {
-      content.repository = await this.createContentRepository(
-        client,
-        user.login,
-        content.repository.name
-      );
-    }
-    const contentBranch = (await client.getRepository(content.repository)).defaultBranch;
-    const files = await this.collectVaultFiles();
-    new import_obsidian2.Notice(`\u6B63\u5728\u63A8\u9001\u672C\u5730\u5185\u5BB9\u5230 ${content.repository.owner}/${content.repository.name} ...`);
-    await client.pushFiles(content.repository, contentBranch, files, {
-      message: "Deploy theme: sync local vault content",
-      authorName: user.login,
-      authorEmail: `${user.login}@users.noreply.github.com`
-    });
-    const theme = parseRepoRef(themeRepo.trim() || DEFAULT_THEME_REPO);
-    if (!await this.repositoryExists(client, theme)) {
-      throw new Error(`\u4E3B\u9898\u4ED3\u5E93 ${theme.owner}/${theme.name} \u4E0D\u5B58\u5728\u6216\u65E0\u6CD5\u8BBF\u95EE\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u300C\u4E3B\u9898\u4ED3\u5E93\u300D\u3002`);
-    }
-    const blog = {
-      owner: user.login,
-      name: this.resolveBlogRepoName(blogRepoName, user.login)
-    };
-    if (!await this.repositoryExists(client, blog)) {
-      new import_obsidian2.Notice(`\u535A\u5BA2\u4ED3\u5E93\u4E0D\u5B58\u5728\uFF0C\u6B63\u5728\u521B\u5EFA ${blog.name} ...`);
-      await client.createRepository({ name: blog.name, private: false });
-    }
-    new import_obsidian2.Notice(`\u6B63\u5728\u628A\u4E3B\u9898\u5FEB\u7167\u5199\u5165 ${blog.name} ...`);
-    await client.copyRepositoryBranch(theme, blog, {
-      message: "Deploy theme: snapshot theme source",
-      authorName: user.login,
-      authorEmail: `${user.login}@users.noreply.github.com`
-    });
-    await client.enableActions(blog);
-    await client.setActionsSecret(blog, "WIKI_URL", `https://github.com/${content.repository.owner}/${content.repository.name}.git`);
-    await client.setActionsSecret(blog, "PAT", pat);
-    await client.setActionsSecret(content.repository, "BLOG_REPO", `${blog.owner}/${blog.name}`);
-    await client.setActionsSecret(content.repository, "PAT", pat);
-    if (configurePages) {
-      await client.configurePages(blog);
-    }
-    await client.dispatchRepositoryEvent(blog, "contents-updated");
-    await this.ensureLocalGit(content.repository, contentBranch, pat);
-    new import_obsidian2.Notice(`\u90E8\u7F72\u5B8C\u6210\uFF01\u535A\u5BA2\u4ED3\u5E93\uFF1A${blog.name}\uFF0C\u9996\u6B21\u6784\u5EFA\u5DF2\u89E6\u53D1\u3002`);
-  }
-  /** Directly asks the blog repository to rebuild. */
-  async triggerDeploy() {
-    const client = this.client();
-    const user = await client.getAuthenticatedUser();
-    const blog = {
-      owner: user.login,
-      name: this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login)
-    };
-    try {
-      await client.dispatchRepositoryEvent(blog, "contents-updated");
-    } catch (error) {
-      if (isNotFound(error)) {
-        throw new Error("\u535A\u5BA2\u4ED3\u5E93\u4E0D\u5B58\u5728\uFF0C\u8BF7\u5148\u300C\u90E8\u7F72\u4E3B\u9898\u300D\u3002");
+    if (!exists) {
+      await this.deps.saveSettings({ pendingArticleRepo: fullName });
+      try {
+        await client.createRepository({
+          name: article.name,
+          private: true,
+          autoInit: false
+        });
+        created = true;
+        exists = true;
+      } catch (error) {
+        if (!await this.createdDespiteError(client, article, error)) {
+          throw error;
+        }
+        created = true;
+        exists = true;
       }
-      throw error;
     }
-    new import_obsidian2.Notice("\u5DF2\u89E6\u53D1\u535A\u5BA2\u4ED3\u5E93\u91CD\u5EFA\u3002");
+    await client.setActionsSecrets(article, {
+      BLOG_REPO: `${user.login}/${blogName}`,
+      PAT: settings.pat
+    });
+    if (shouldInitialize && exists && git) {
+      await this.pushPreparedLocalRepository(git, article, settings.pat);
+      await this.deps.saveSettings({ pendingArticleRepo: "" });
+    }
+    return {
+      repository: article,
+      created,
+      initialized: shouldInitialize
+    };
   }
   /**
-   * Ensures the local vault is a complete Git working copy pointing at the
-   * content repository, so obsidian-git can Commit / Push / Pull directly.
+   * Configures the public blog repository.
+   *
+   * Existing repository: only refresh WIKI_URL and PAT (content untouched).
+   * Missing repository: create it once from the official GitHub template,
+   * then configure secrets, Pages and the first build.
    */
-  async ensureLocalGit(repository, branch, pat) {
-    const existingConfig = await this.deps.app.vault.adapter.read(".git/config").catch(() => null);
-    if (existingConfig) {
-      const existingRepository = parseGitHubRemote(existingConfig);
-      if (existingRepository && !sameRepository(existingRepository, repository)) {
+  async configureBlogRepository() {
+    const settings = this.requireVerifiedRepositoryNames("\u914D\u7F6E\u535A\u5BA2\u4ED3\u5E93");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const articleName = validateRepoName(settings.repoName, "\u6587\u7AE0\u4ED3\u5E93");
+    const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "\u535A\u5BA2\u4ED3\u5E93") };
+    const fullName = repositoryFullName(blog);
+    let exists = await this.repositoryExists(client, blog);
+    const pending = settings.pendingBlogRepo === fullName;
+    let created = false;
+    const shouldInitialize = !exists || pending;
+    if (!exists) {
+      await this.deps.saveSettings({ pendingBlogRepo: fullName });
+      try {
+        await client.createRepositoryFromTemplate(BLOG_TEMPLATE, {
+          owner: user.login,
+          name: blog.name,
+          private: false
+        });
+        created = true;
+        exists = true;
+      } catch (error) {
+        if (!await this.createdDespiteError(client, blog, error)) {
+          throw error;
+        }
+        created = true;
+        exists = true;
+      }
+    }
+    if (!exists) {
+      throw new Error(`\u535A\u5BA2\u4ED3\u5E93 ${fullName} \u5C1A\u4E0D\u53EF\u7528\uFF0C\u8BF7\u7A0D\u540E\u76F4\u63A5\u91CD\u8BD5\u3002`);
+    }
+    await client.setActionsSecrets(blog, {
+      WIKI_URL: `https://github.com/${user.login}/${articleName}.git`,
+      PAT: settings.pat
+    });
+    let warning;
+    if (shouldInitialize) {
+      try {
+        await client.configurePages(blog);
+      } catch (error) {
+        warning = `Pages \u672A\u80FD\u81EA\u52A8\u914D\u7F6E\uFF1A${errorMessage(error)}\u3002\u53EF\u7A0D\u540E\u5728 GitHub \u4ED3\u5E93 Settings \u2192 Pages \u4E2D\u9009\u62E9 GitHub Actions\u3002`;
+      }
+      try {
+        await client.dispatchRepositoryEvent(blog, "contents-updated");
+      } catch (error) {
+        const dispatchWarning = `\u9996\u6B21\u6784\u5EFA\u672A\u80FD\u81EA\u52A8\u89E6\u53D1\uFF1A${errorMessage(error)}\u3002\u53EF\u7A0D\u540E\u70B9\u51FB\u300C\u89E6\u53D1\u6784\u5EFA\u300D\u3002`;
+        warning = warning ? `${warning} ${dispatchWarning}` : dispatchWarning;
+      }
+      await this.deps.saveSettings({ pendingBlogRepo: "" });
+    }
+    return {
+      repository: blog,
+      created,
+      initialized: shouldInitialize,
+      warning
+    };
+  }
+  async triggerDeploy() {
+    const settings = this.requireVerifiedPat("\u89E6\u53D1\u90E8\u7F72");
+    const blogName = validateRepoName(settings.blogRepoName, "\u535A\u5BA2\u4ED3\u5E93");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    await client.dispatchRepositoryEvent(
+      { owner: user.login, name: blogName },
+      "contents-updated"
+    );
+    new import_obsidian2.Notice("\u5DF2\u89E6\u53D1\u535A\u5BA2\u91CD\u65B0\u6784\u5EFA\u3002", 4e3);
+  }
+  async prepareLocalRepository(repository, pat) {
+    const git = await this.getObsidianGit(repository, pat);
+    const { manager } = git;
+    await manager.init();
+    await manager.setConfig("user.name", repository.owner);
+    await manager.setConfig("user.email", `${repository.owner}@users.noreply.github.com`);
+    const status = await manager.status();
+    if (status.all.length > 0) {
+      await manager.commitAll({ message: "Initialize article repository" });
+    }
+    if (!await this.hasLocalCommit(manager)) {
+      throw new Error("\u5F53\u524D Vault \u6CA1\u6709\u53EF\u4E0A\u4F20\u7684\u6587\u4EF6\uFF0C\u8BF7\u81F3\u5C11\u4FDD\u7559\u4E00\u4E2A\u672A\u88AB .gitignore \u6392\u9664\u7684\u6587\u4EF6\u3002");
+    }
+    const branch = await manager.branchInfo();
+    if (!branch.current) {
+      throw new Error("\u672C\u5730 Git \u672A\u751F\u6210\u6709\u6548\u5206\u652F\uFF0C\u8BF7\u91CD\u542F Obsidian \u540E\u91CD\u8BD5\u3002");
+    }
+    if (branch.current !== DEFAULT_BRANCH) {
+      if (branch.branches.includes(DEFAULT_BRANCH)) {
         throw new Error(
-          `\u5F53\u524D Vault \u5DF2\u8FDE\u63A5 ${existingRepository.owner}/${existingRepository.name}\uFF0C\u4E0D\u4F1A\u8986\u76D6\u4E3A ${repository.owner}/${repository.name}\u3002`
+          `\u5F53\u524D\u4F4D\u4E8E ${branch.current} \u5206\u652F\uFF0C\u4F46\u672C\u5730\u5DF2\u5B58\u5728 main \u5206\u652F\uFF1B\u8BF7\u5148\u5728 obsidian-git \u4E2D\u5207\u6362\u5230 main \u540E\u91CD\u8BD5\u3002`
         );
       }
+      await manager.createBranch(DEFAULT_BRANCH);
     }
-    const { plugin, manager } = await this.getObsidianGit(repository, pat);
-    const remote = "origin";
-    await manager.init();
-    await manager.setRemote(remote, authenticatedGitHubUrl(repository, pat));
-    await manager.fetch(remote);
-    if (import_obsidian2.Platform.isDesktopApp) {
-      if (!manager.git) {
-        throw new Error("\u5F53\u524D obsidian-git \u684C\u9762\u7AEF\u63A5\u53E3\u4E0D\u517C\u5BB9\uFF0C\u8BF7\u66F4\u65B0\u6A21\u677F\u540E\u91CD\u8BD5\u3002");
+    return git;
+  }
+  async pushPreparedLocalRepository(git, repository, pat) {
+    try {
+      await git.manager.setRemote("origin", authenticatedGitHubUrl(repository, pat));
+      await git.manager.updateUpstreamBranch(`origin/${DEFAULT_BRANCH}`);
+    } catch (error) {
+      throw new Error(`\u9996\u6B21\u4E0A\u4F20\u4E2D\u65AD\uFF1A${errorMessage(error)}\u3002\u8BF7\u76F4\u63A5\u91CD\u65B0\u70B9\u51FB\u300C\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93\u300D\u3002`);
+    }
+    try {
+      git.plugin.unloadPlugin?.();
+      await git.plugin.init({ fromReload: true });
+    } catch {
+      new import_obsidian2.Notice("\u6587\u7AE0\u5DF2\u4E0A\u4F20\uFF1Bobsidian-git \u5237\u65B0\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u542F Obsidian\u3002", 8e3);
+    }
+  }
+  async hasLocalCommit(manager) {
+    try {
+      if (manager.resolveRef) {
+        return Boolean(await manager.resolveRef("HEAD"));
       }
-      await manager.git.checkout(["-f", "-B", branch, `${remote}/${branch}`]);
-    } else {
-      await manager.checkout(branch, remote);
+      if (manager.git) {
+        return Boolean((await manager.git.revparse(["--verify", "HEAD"])).trim());
+      }
+    } catch {
+      return false;
     }
-    await manager.setConfig(`branch.${branch}.remote`, remote);
-    await manager.setConfig(`branch.${branch}.merge`, `refs/heads/${branch}`);
-    plugin.unloadPlugin?.();
-    await plugin.init({ fromReload: true });
+    return false;
   }
   async getObsidianGit(repository, pat) {
     const registry = this.deps.app.plugins;
@@ -3943,125 +3727,93 @@ var BlogService = class {
     }
     const manager = plugin.gitManager;
     if (!manager) {
-      throw new Error("\u65E0\u6CD5\u521D\u59CB\u5316 obsidian-git\uFF0C\u8BF7\u786E\u8BA4\u5185\u7F6E\u63D2\u4EF6\u7248\u672C\u5B8C\u6574\u3002");
+      throw new Error("\u65E0\u6CD5\u521D\u59CB\u5316 obsidian-git\uFF0C\u8BF7\u91CD\u542F Obsidian \u540E\u91CD\u8BD5\u3002");
     }
     return { plugin, manager };
   }
-  /**
-   * Collects the vault files to push, honoring the vault's `.gitignore`
-   * (so plugin data containing the PAT never leaves the device).
-   */
-  async collectVaultFiles() {
-    const rawRules = await this.deps.app.vault.adapter.read(".gitignore").catch(() => null);
-    const rules = parseGitignore(rawRules ?? "");
-    const files = /* @__PURE__ */ new Map();
-    for (const file of this.deps.app.vault.getFiles()) {
-      if (file.path.startsWith(".git/") || isIgnored(file.path, rules)) {
-        continue;
-      }
-      const data = await this.deps.app.vault.adapter.readBinary(file.path);
-      files.set(file.path, new Uint8Array(data));
-    }
-    return files;
-  }
-  client() {
-    const { pat } = this.requireSettings("\u64CD\u4F5C");
-    return new GitHubClient(pat);
-  }
-  requireSettings(action) {
-    const settings = this.deps.getSettings();
-    if (!settings.pat.trim()) {
-      throw new Error(`\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199 GitHub PAT \u518D${action}\u3002`);
-    }
-    return settings;
-  }
-  resolveBlogRepoName(value, login) {
-    return value.trim() || `${login}.github.io`;
-  }
-  /** Creates the private content repository (empty; content is pushed next). */
-  async createContentRepository(client, owner, name) {
-    const safeName = sanitizeRepoName(name);
-    new import_obsidian2.Notice(`\u672A\u8BC6\u522B\u5230\u6587\u7AE0\u4ED3\u5E93\uFF0C\u6B63\u5728\u521B\u5EFA ${safeName} ...`);
-    const created = await client.createRepository({ name: safeName, private: true });
-    const repository = { owner, name: created.name };
-    await this.deps.saveSettings({ repoName: created.name });
-    new import_obsidian2.Notice(`\u6587\u7AE0\u4ED3\u5E93\u5DF2\u521B\u5EFA\uFF1A${owner}/${created.name}`);
-    return repository;
-  }
-  /**
-   * Resolves the content repository target:
-   * 1. the manually entered repository name;
-   * 2. the `origin` remote from `.git/config`, when it points at the current
-   *    user's own account (desktop clones);
-   * 3. a repository whose name matches the Vault folder (zip downloads).
-   * Returns the resolved repository (or `null`) plus the preferred name to
-   * create when deploying.
-   */
-  async detectContentRepository(client) {
-    const manual = this.deps.getSettings().repoName.trim();
-    if (manual) {
-      const user = await client.getAuthenticatedUser();
-      return { repository: { owner: user.login, name: manual }, preferredName: manual };
-    }
+  async assertLocalRepositoryTarget(repository) {
     const config = await this.deps.app.vault.adapter.read(".git/config").catch(() => null);
-    if (config) {
-      const remote = parseGitHubRemote(config);
-      if (remote) {
-        const user = await client.getAuthenticatedUser();
-        if (remote.owner.toLowerCase() === user.login.toLowerCase()) {
-          return { repository: remote, preferredName: remote.name };
-        }
-        return { repository: null, preferredName: remote.name };
-      }
+    if (!config) {
+      return;
     }
-    const vaultName = this.deps.app.vault.getName();
-    if (vaultName) {
-      const user = await client.getAuthenticatedUser();
-      return {
-        repository: { owner: user.login, name: vaultName },
-        preferredName: vaultName
-      };
+    const remote = parseGitHubRemote(config);
+    if (remote && !sameRepository(remote, repository)) {
+      throw new Error(
+        `\u5F53\u524D Vault \u5DF2\u8FDE\u63A5 ${repositoryFullName(remote)}\uFF1B\u4E3A\u907F\u514D\u8BEF\u63A8\u9001\uFF0C\u4E0D\u4F1A\u6539\u4E3A ${repositoryFullName(repository)}\u3002`
+      );
     }
-    return { repository: null, preferredName: "my-blog" };
+  }
+  async createdDespiteError(client, repository, error) {
+    if (error instanceof GitHubApiError && error.status !== 422) {
+      return false;
+    }
+    await wait(600);
+    try {
+      return await this.repositoryExists(client, repository);
+    } catch {
+      return false;
+    }
   }
   async repositoryExists(client, repository) {
     try {
       await client.getRepository(repository);
       return true;
     } catch (error) {
-      if (isNotFound(error)) {
+      if (error instanceof GitHubApiError && error.status === 404) {
         return false;
       }
       throw error;
     }
   }
-};
-function parseGitignore(content) {
-  const rules = [];
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("!")) {
-      continue;
+  client(forceNew = false) {
+    const { pat } = this.requirePat("\u64CD\u4F5C");
+    const normalized = pat.trim();
+    if (forceNew || !this.cachedClient || this.cachedClient.pat !== normalized) {
+      this.cachedClient = { pat: normalized, client: new GitHubClient(normalized) };
     }
-    const pattern = trimmed.replace(/\/$/, "");
-    rules.push({ regex: gitignoreRegex(pattern) });
+    return this.cachedClient.client;
   }
-  return rules;
-}
-function gitignoreRegex(pattern) {
-  const body = pattern.replace(/^\//, "");
-  const hasSlash = body.includes("/");
-  const escaped = body.split("/").map((segment) => segment.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")).join("/");
-  if (hasSlash) {
-    return new RegExp(`^${escaped}(/.*)?$`);
+  requirePat(action) {
+    const settings = this.deps.getSettings();
+    if (!settings.pat.trim()) {
+      throw new Error(`\u8BF7\u5148\u586B\u5199 GitHub PAT\uFF0C\u518D${action}\u3002`);
+    }
+    return settings;
   }
-  return new RegExp(`(^|/)${escaped}(/.*)?$`);
+  requireVerifiedPat(action) {
+    const settings = this.requirePat(action);
+    if (this.verifiedPat !== settings.pat.trim()) {
+      throw new Error(`\u8BF7\u5148\u70B9\u51FB\u300C\u68C0\u6D4B\u8FDE\u901A\u6027\u300D\u9A8C\u8BC1\u5F53\u524D PAT\uFF0C\u518D${action}\u3002`);
+    }
+    return settings;
+  }
+  requireVerifiedRepositoryNames(action) {
+    const settings = this.requireVerifiedPat(action);
+    if (!settings.repoName.trim()) {
+      throw new Error("\u8BF7\u5148\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\u3002");
+    }
+    if (!settings.blogRepoName.trim()) {
+      throw new Error("\u8BF7\u5148\u586B\u5199\u535A\u5BA2\u4ED3\u5E93\u540D\u3002");
+    }
+    return settings;
+  }
+};
+function validateRepoName(value, label) {
+  const name = value.trim();
+  if (!name) {
+    throw new Error(`\u8BF7\u5148\u586B\u5199${label}\u540D\u3002`);
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) {
+    throw new Error(`${label}\u540D\u53EA\u80FD\u5305\u542B\u5B57\u6BCD\u3001\u6570\u5B57\u3001\u70B9\u3001\u4E0B\u5212\u7EBF\u548C\u8FDE\u5B57\u7B26\u3002`);
+  }
+  return name;
 }
-function isIgnored(path, rules) {
-  return rules.some((rule) => rule.regex.test(path));
+function sanitizeRepoName(value, fallback) {
+  const cleaned = value.trim().replace(/[^A-Za-z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
+  return cleaned || fallback;
 }
-function isNotFound(error) {
-  return error instanceof GitHubApiError && error.status === 404;
+function repositoryFullName(repository) {
+  return `${repository.owner}/${repository.name}`;
 }
 function parseGitHubRemote(config) {
   const match = config.match(
@@ -4077,16 +3829,11 @@ function authenticatedGitHubUrl(repository, pat) {
   const token = encodeURIComponent(pat);
   return `https://${owner}:${token}@github.com/${repository.owner}/${repository.name}.git`;
 }
-function sanitizeRepoName(name) {
-  const cleaned = name.trim().replace(/[^A-Za-z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
-  return cleaned || "my-blog";
+function errorMessage(error) {
+  return error instanceof Error && error.message ? error.message : String(error);
 }
-function parseRepoRef(value) {
-  const match = value.trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
-  if (!match) {
-    throw new Error(`\u4E3B\u9898\u4ED3\u5E93\u683C\u5F0F\u5E94\u4E3A owner/repository\uFF1A${value}`);
-  }
-  return { owner: match[1], name: match[2] };
+function wait(durationMs) {
+  return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }
 
 // src/ui/NewArticleModal.ts
@@ -4175,18 +3922,11 @@ var VitePressButterflyPublisher = class extends import_obsidian4.Plugin {
     this.addSettingTab(
       new PublisherSettingsTab(this.app, this, () => this.settings, (changes) => this.updateSettings(changes), {
         onCheckPat: () => this.blog.checkPat(),
-        onCheckContentRepo: () => this.blog.checkContentRepo(),
-        onCheckBlogRepo: () => this.blog.checkBlogRepo(),
-        onCheckReady: () => this.blog.checkReady(),
-        onSetup: () => this.blog.setup(),
+        onConfigureArticleRepository: () => this.blog.configureArticleRepository(),
+        onConfigureBlogRepository: () => this.blog.configureBlogRepository(),
         onTrigger: () => this.blog.triggerDeploy()
       })
     );
-    this.addCommand({
-      id: "setup-blog",
-      name: "\u90E8\u7F72\u4E3B\u9898\uFF08\u63A8\u9001\u672C\u5730\u5185\u5BB9\u5E76\u89E6\u53D1\u6784\u5EFA\uFF09",
-      callback: () => this.runWithFeedback("\u90E8\u7F72\u4E3B\u9898", () => this.blog.setup())
-    });
     this.addCommand({
       id: "trigger-deploy",
       name: "\u89E6\u53D1\u535A\u5BA2\u91CD\u5EFA",
@@ -4205,9 +3945,20 @@ var VitePressButterflyPublisher = class extends import_obsidian4.Plugin {
   onunload() {
   }
   async loadSettings() {
-    this.settings = { ...DEFAULT_SETTINGS, ...await this.loadData() };
+    const saved = await this.loadData();
+    this.settings = {
+      ...DEFAULT_SETTINGS,
+      pat: saved?.pat ?? "",
+      repoName: saved?.repoName ?? "",
+      blogRepoName: saved?.blogRepoName ?? "",
+      pendingArticleRepo: saved?.pendingArticleRepo ?? "",
+      pendingBlogRepo: saved?.pendingBlogRepo ?? ""
+    };
   }
   async updateSettings(changes) {
+    if (changes.pat !== void 0 && changes.pat.trim() !== this.settings.pat.trim()) {
+      this.blog.invalidatePat();
+    }
     this.settings = { ...this.settings, ...changes };
     await this.saveData(this.settings);
   }
