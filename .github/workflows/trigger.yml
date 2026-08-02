@@ -4,6 +4,7 @@ name: Trigger Blog Rebuild
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   trigger:

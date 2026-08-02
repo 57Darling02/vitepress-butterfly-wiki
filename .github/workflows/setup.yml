@@ -1,24 +1,10 @@
 name: Setup Blog
 
+# All inputs come from Actions secrets (SETUP_PAT, BLOG_REPO_NAME, THEME_REPO,
+# CONFIGURE_PAGES), written by the built-in Obsidian plugin. Running this
+# workflow manually without those secrets fails with a friendly message.
 on:
   workflow_dispatch:
-    inputs:
-      blog_repo_name:
-        description: "Public blog repo name (suggested: <your-username>.github.io)"
-        required: true
-        default: "my-blog"
-      pat:
-        description: "GitHub Personal Access Token with repo + workflow scopes. It will be written into both repositories' secrets."
-        required: true
-      theme_repo:
-        description: "Theme source repository to fork"
-        required: false
-        default: "57Darling02/VitePress_butterfly"
-      configure_pages:
-        description: "Enable GitHub Pages (Source: GitHub Actions) on the blog repo"
-        type: boolean
-        required: false
-        default: true
 
 permissions:
   contents: read
@@ -31,15 +17,15 @@ jobs:
       - name: Checkout content repository
         uses: actions/checkout@v4
 
-      - name: Validate inputs
+      - name: Validate secrets
         env:
-          PAT: ${{ github.event.inputs.pat }}
-          BLOG_REPO_NAME: ${{ github.event.inputs.blog_repo_name }}
+          SETUP_PAT: ${{ secrets.SETUP_PAT }}
+          BLOG_REPO_NAME: ${{ secrets.BLOG_REPO_NAME }}
         run: |
           set -euo pipefail
 
-          if [ -z "$PAT" ]; then
-            echo "::error::PAT is required. Generate one with repo and workflow scopes."
+          if [ -z "$SETUP_PAT" ] || [ -z "$BLOG_REPO_NAME" ]; then
+            echo "::error::缺少 SETUP_PAT / BLOG_REPO_NAME secrets。请用 Obsidian 打开本仓库，在「VitePress Butterfly 发布」插件设置中填写 PAT 和博客仓库名，然后点击「触发 Setup」。"
             exit 1
           fi
 
@@ -51,13 +37,15 @@ jobs:
       - name: Fork theme repository
         id: fork
         env:
-          GH_TOKEN: ${{ github.event.inputs.pat }}
+          GH_TOKEN: ${{ secrets.SETUP_PAT }}
           OWNER: ${{ github.repository_owner }}
-          BLOG_REPO_NAME: ${{ github.event.inputs.blog_repo_name }}
-          THEME_REPO: ${{ github.event.inputs.theme_repo }}
+          BLOG_REPO_NAME: ${{ secrets.BLOG_REPO_NAME }}
+          THEME_REPO: ${{ secrets.THEME_REPO }}
           WIKI_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+
+          THEME_REPO="${THEME_REPO:-57Darling02/VitePress_butterfly}"
 
           BLOG_REPO="$OWNER/$BLOG_REPO_NAME"
           echo "blog_repo=$BLOG_REPO" >> "$GITHUB_OUTPUT"
@@ -78,7 +66,7 @@ jobs:
 
       - name: Enable Actions on the blog repo
         env:
-          GH_TOKEN: ${{ github.event.inputs.pat }}
+          GH_TOKEN: ${{ secrets.SETUP_PAT }}
           BLOG_REPO: ${{ steps.fork.outputs.blog_repo }}
         run: |
           set -euo pipefail
@@ -88,8 +76,8 @@ jobs:
 
       - name: Configure repository secrets
         env:
-          GH_TOKEN: ${{ github.event.inputs.pat }}
-          PAT: ${{ github.event.inputs.pat }}
+          GH_TOKEN: ${{ secrets.SETUP_PAT }}
+          PAT: ${{ secrets.SETUP_PAT }}
           BLOG_REPO: ${{ steps.fork.outputs.blog_repo }}
           WIKI_REPO: ${{ steps.fork.outputs.wiki_repo }}
           WIKI_URL: ${{ steps.fork.outputs.wiki_url }}
@@ -105,9 +93,9 @@ jobs:
           printf "%s" "$PAT" | gh secret set PAT -R "$WIKI_REPO"
 
       - name: Configure GitHub Pages
-        if: ${{ github.event.inputs.configure_pages == 'true' }}
+        if: ${{ secrets.CONFIGURE_PAGES != 'false' }}
         env:
-          GH_TOKEN: ${{ github.event.inputs.pat }}
+          GH_TOKEN: ${{ secrets.SETUP_PAT }}
           BLOG_REPO: ${{ steps.fork.outputs.blog_repo }}
         run: |
           set +e
@@ -125,7 +113,7 @@ jobs:
 
       - name: Trigger first build
         env:
-          GH_TOKEN: ${{ github.event.inputs.pat }}
+          GH_TOKEN: ${{ secrets.SETUP_PAT }}
           BLOG_REPO: ${{ steps.fork.outputs.blog_repo }}
         run: |
           set -euo pipefail

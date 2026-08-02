@@ -1,0 +1,9 @@
+{
+  "id": "vitepress-butterfly-publisher",
+  "name": "VitePress Butterfly Publisher",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "内置的文章发布插件：触发 Setup、拉取更新、推送发布，无需安装 Git。",
+  "author": "57Darling02",
+  "isDesktopOnly": false
+}
