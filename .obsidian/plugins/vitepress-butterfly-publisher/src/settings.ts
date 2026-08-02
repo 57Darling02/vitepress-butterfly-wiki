@@ -17,11 +17,9 @@ export interface PluginSettings {
 	repoName: string;
 	/** Public blog (theme) repository name. */
 	blogRepoName: string;
-	/** Theme source repository, used by the Setup workflow. */
+	/** Theme source repository, force-synced by every blog build. */
 	themeRepo: string;
-	/** Template repository used to create the content repository on first Setup. */
-	templateRepo: string;
-	/** Whether Setup should try to enable GitHub Pages. */
+	/** Whether deploy should try to enable GitHub Pages. */
 	configurePages: boolean;
 	/** Paths published by the last successful push. */
 	publishedPaths: string[];
@@ -32,7 +30,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	repoName: "",
 	blogRepoName: "",
 	themeRepo: "57Darling02/VitePress_butterfly",
-	templateRepo: "57Darling02/vitepress-butterfly-wiki",
 	configurePages: true,
 	publishedPaths: [],
 };
@@ -44,11 +41,10 @@ export interface PublisherSettingsActions {
 	onCheckContentRepo(): Promise<RepoCheckResult>;
 	/** Step 3: blog (theme) repository access. */
 	onCheckBlogRepo(): Promise<RepoCheckResult>;
-	/** Step 4: both repositories must be in a usable state. */
+	/** Step 4: both repositories must be resolvable. */
 	onCheckReady(): Promise<void>;
 	onSetup(): Promise<unknown>;
 	onTrigger(): Promise<unknown>;
-	onClone(): Promise<unknown>;
 }
 
 type SaveSettings = (changes: Partial<PluginSettings>) => Promise<void>;
@@ -74,7 +70,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		containerEl.createEl("h2", { text: "VitePress Butterfly 发布" });
 		containerEl.createEl("p", {
-			text: "本插件负责初始化与部署：创建仓库、配置 secrets、触发 Setup。日常的发布与拉取请使用内置的 obsidian-git 插件（桌面端与移动端均可）。",
+			text: "本插件负责初始化与部署：创建仓库、推送本地内容、配置 secrets、部署主题。日常的发布与拉取请使用内置的 obsidian-git 插件（桌面端与移动端均可）。",
 		});
 
 		const settings = this.getSettings();
@@ -122,10 +118,10 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					() => this.actions.onCheckContentRepo(),
 					(result) => this.setStatus(
 						contentStatus,
-						result.status === "configure" ? "ok" : "warn",
-						result.status === "configure"
-							? `✓ 待配置可用 ${result.repository?.owner}/${result.repository?.name}`
-							: "⚠ 待创建可用（Setup 时自动从模板创建私密仓库）",
+						result.ready ? "ok" : "error",
+						result.ready
+							? `✓ 已就绪：本地内容将推送到 ${result.repository?.owner}/${result.repository?.name}`
+							: "✗ 未解析出仓库名：请在上方填写文章仓库名",
 					),
 					"文章仓库检测失败",
 				);
@@ -150,10 +146,8 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					() => this.actions.onCheckBlogRepo(),
 					(result) => this.setStatus(
 						blogStatus,
-						result.status === "configure" ? "ok" : "warn",
-						result.status === "configure"
-							? `✓ 待配置可用 ${result.repository?.owner}/${result.repository?.name}`
-							: "⚠ 待创建可用（Setup 时自动从主题模板创建公开仓库）",
+						"ok",
+						`✓ 已就绪：${result.repository?.name}（不存在将自动创建，已存在将覆盖为最新主题）`,
 					),
 					"样式仓库检测失败",
 				);
@@ -162,7 +156,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		// --- Step 4: readiness ---
 		const readySetting = new Setting(containerEl)
 			.setName("就绪检测")
-			.setDesc("确认两个仓库均处于可用状态（待创建或待配置）后，即可执行 Setup。");
+			.setDesc("两个仓库均解析出名字后，即可执行「部署主题」。");
 		const readyStatus = this.createStatus(readySetting.descEl);
 		readySetting
 			.addExtraButton((button) => {
@@ -175,7 +169,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					() => this.setStatus(
 						readyStatus,
 						"ok",
-						"✓ 双仓库均可用，点击「触发 Setup」完成初始化与首次部署",
+						"✓ 双仓库已就绪，点击「部署主题」完成初始化与首次部署",
 					),
 					"就绪检测失败",
 				);
@@ -184,18 +178,10 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		// --- Advanced ---
 		new Setting(containerEl)
 			.setName("主题仓库")
-			.setDesc("博客仓库创建时复制的主题源仓库（模板），一般无需修改。")
+			.setDesc("博客仓库每次构建时强制同步的主题源仓库，一般无需修改。")
 			.addText((text) => {
 				text.setPlaceholder("57Darling02/VitePress_butterfly");
 				this.bindText(text, "themeRepo", settings.themeRepo, (value) => value.trim());
-			});
-
-		new Setting(containerEl)
-			.setName("模板仓库")
-			.setDesc("首次 Setup 时用于创建文章仓库的模板源，一般无需修改。")
-			.addText((text) => {
-				text.setPlaceholder("57Darling02/vitepress-butterfly-wiki");
-				this.bindText(text, "templateRepo", settings.templateRepo, (value) => value.trim());
 			});
 
 		new Setting(containerEl)
@@ -212,8 +198,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		// --- Actions ---
 		containerEl.createEl("h3", { text: "操作" });
-		this.addAction(containerEl, "触发 Setup", "创建缺失的仓库、配置 secrets 与 Pages，并直接触发首次部署（无需等待 GitHub Actions）。", "Setup 执行中...", this.actions.onSetup);
-		this.addAction(containerEl, "克隆到本地", "生成 .git 工作副本，之后可用 obsidian-git 进行 Commit / Push / Pull。", "克隆中...", this.actions.onClone);
+		this.addAction(containerEl, "部署主题", "将本地内容推送到文章仓库（覆盖云端），配置博客仓库 secrets 与 Pages，并触发首次构建。", "部署中...", this.actions.onSetup);
 		this.addAction(containerEl, "触发部署", "直接通知博客仓库重新构建部署（发布请用 obsidian-git 的 Push）。", "触发中...", this.actions.onTrigger);
 	}
 

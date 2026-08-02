@@ -4,7 +4,89 @@ import { GitHubApiError, GitHubClient, GitHubRepositoryRef } from "./github";
 import type { PluginSettings } from "../settings";
 
 const DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
-const DEFAULT_TEMPLATE_REPO = "57Darling02/vitepress-butterfly-wiki";
+
+/**
+ * The deploy workflow installed on the blog repository. It is a thin shell:
+ * every build first force-syncs the theme source (git reset --hard upstream),
+ * so the blog repository never drifts from the theme — its own content does
+ * not matter. The workflow file itself is restored after the reset, keeping
+ * it owned by this plugin (single source of truth, no drift).
+ */
+const BLOG_DEPLOY_WORKFLOW = `name: Deploy Site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  repository_dispatch:
+    types: [contents-updated]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: site-deploy
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sync theme source
+        env:
+          THEME_REPO: \${{ secrets.THEME_REPO }}
+        run: |
+          set -euo pipefail
+          THEME_REPO="\${THEME_REPO:-57Darling02/VitePress_butterfly}"
+          cp .github/workflows/deploy.yml /tmp/vpb-deploy.yml
+          git remote add upstream "https://github.com/$THEME_REPO.git"
+          git fetch --depth=1 upstream main
+          git reset --hard upstream/main
+          mkdir -p .github/workflows
+          cp /tmp/vpb-deploy.yml .github/workflows/deploy.yml
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build with VitePress
+        env:
+          WIKI_URL: \${{ secrets.WIKI_URL }}
+          PAT: \${{ secrets.PAT }}
+        run: pnpm docs:build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .vitepress/dist
+
+  deploy-pages:
+    name: Deploy GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: \${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+`;
 
 export interface BlogServiceDeps {
   app: App;
@@ -40,28 +122,24 @@ interface AppWithPluginRegistry extends App {
   };
 }
 
-export type RepoStatus = "create" | "configure";
-
 export interface RepoCheckResult {
-  /**
-   * `create`    — the repository does not exist yet; Setup will create it.
-   * `configure` — the repository exists and is accessible; Setup will reuse it.
-   */
-  status: RepoStatus;
-  /** Resolved repository reference, or `null` when it is not available yet. */
+  /** Resolved repository reference, or `null` when the name is undetermined. */
   repository: GitHubRepositoryRef | null;
+  /** Whether deploying can proceed for this repository. */
+  ready: boolean;
 }
 
 /**
  * Initialization and deployment helper. Daily content sync (commit, push,
- * pull) is handled by the obsidian-git plugin, which works on desktop and
- * mobile alike; this service covers everything git does not: repository
- * creation, Actions secrets, Pages configuration, and rebuild triggers.
+ * pull) is handled by the obsidian-git plugin; this service covers everything
+ * git does not: repository creation, force-pushing the local vault content,
+ * Actions secrets, Pages configuration, and rebuild triggers.
  *
- * Setup is executed directly by the plugin through the GitHub API (no
- * workflow round-trip, no fork requirement): it creates whatever repository
- * is missing, always (re)writes both repositories' secrets, enables Actions
- * and Pages on the blog repository, then kicks off the first build.
+ * "Deploy theme" runs entirely from the plugin through the GitHub API:
+ * the content repository is overwritten with the local vault content (the
+ * local folder is the single source of truth and always ends up with a full
+ * `.git` working copy), the blog repository is a pure deployment shell whose
+ * content is force-synced to the theme on every build.
  */
 export class BlogService {
   constructor(private readonly deps: BlogServiceDeps) {}
@@ -78,19 +156,20 @@ export class BlogService {
   }
 
   /**
-   * 2. Content repository: resolve it against the current user's account.
-   *    A local `.git` remote that matches a repository of the user maps to
-   *    `configure`; everything else maps to `create`.
+   * 2. Content repository: resolve the target name (manual, local Git
+   *    remote, or Vault name). Existence does not matter — deploying will
+   *    create it and overwrite it with the local content.
    */
   async checkContentRepo(): Promise<RepoCheckResult> {
     const client = this.client();
     const { repository } = await this.detectContentRepository(client);
-    return { status: repository ? "configure" : "create", repository };
+    return { repository, ready: repository !== null };
   }
 
   /**
-   * 3. Blog repository: existence check only (no fork relationship is
-   *    required anymore).
+   * 3. Blog repository: resolve the name only. Existence and content do not
+   *    matter — deploying creates it when missing, and every build overwrites
+   *    it with the latest theme.
    */
   async checkBlogRepo(): Promise<RepoCheckResult> {
     const client = this.client();
@@ -99,14 +178,10 @@ export class BlogService {
       owner: user.login,
       name: this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login),
     };
-    const exists = await this.repositoryExists(client, repository);
-    return { status: exists ? "configure" : "create", repository };
+    return { repository, ready: true };
   }
 
-  /**
-   * 4. Readiness: both repositories must be in a usable state
-   *    (`create` or `configure`) before Setup can run.
-   */
+  /** 4. Readiness: both repositories must be resolvable before deploying. */
   async checkReady(): Promise<void> {
     await this.checkContentRepo();
     await this.checkBlogRepo();
@@ -117,66 +192,78 @@ export class BlogService {
   // ------------------------------------------------------------------
 
   /**
-   * Runs the whole initialization directly from the plugin, so every step
-   * has clear feedback and rerunning Setup is always safe:
+   * Deploys the theme:
    *
-   * 1. create the content repository (private, from the wiki template) if missing;
-   * 2. create the blog repository (public, from the theme template) if missing —
-   *    existing repositories are reused as-is, no fork is ever required;
-   * 3. always (re)write the secrets of both repositories;
-   * 4. enable Actions and configure Pages on the blog repository;
-   * 5. dispatch the first build directly;
-   * 6. initialize the local Git working copy for obsidian-git.
+   * 1. ensure the content repository exists (private, empty) and overwrite
+   *    its default branch with the local vault content (API force push);
+   * 2. ensure the blog repository exists (public, empty) — an existing one
+   *    is reused as-is, its content is irrelevant;
+   * 3. enable Actions, write all secrets and configure Pages;
+   * 4. install the thin deploy workflow on the blog repository — this push
+   *    itself triggers the first build, which force-syncs the theme;
+   * 5. turn the local vault into a full Git working copy (obsidian-git).
+   *
+   * Rerunning is safe: everything is idempotent, and the local content
+   * always wins on the content repository.
    */
   async setup(): Promise<void> {
-    const { pat, blogRepoName, themeRepo, configurePages } = this.requireSettings("触发 Setup");
+    const { pat, blogRepoName, themeRepo, configurePages } = this.requireSettings("部署主题");
     const client = this.client();
     const user = await client.getAuthenticatedUser();
 
-    // 1. Content repository.
+    // 1. Content repository: create when missing, then force-push local content.
     const content = await this.detectContentRepository(client);
     if (!content.repository) {
-      content.repository = await this.createRepository(client, user.login, content.preferredName);
+      throw new Error("未解析出文章仓库名：请先在设置中填写文章仓库名，或从 Git 克隆打开本目录。");
     }
+    if (!(await this.repositoryExists(client, content.repository))) {
+      content.repository = await this.createContentRepository(
+        client,
+        user.login,
+        content.repository.name,
+      );
+    }
+    const contentBranch = (await client.getRepository(content.repository)).defaultBranch;
+    const files = await this.collectVaultFiles();
+    new Notice(`正在推送本地内容到 ${content.repository.owner}/${content.repository.name} ...`);
+    await client.pushFiles(content.repository, contentBranch, files, {
+      message: "Deploy theme: sync local vault content",
+      authorName: user.login,
+      authorEmail: `${user.login}@users.noreply.github.com`,
+    });
 
-    // 2. Blog repository (plain repository from the theme template; no fork).
+    // 2. Blog repository: create when missing; existing ones are reused
+    //    without any content check (every build overwrites them anyway).
     const blog = {
       owner: user.login,
       name: this.resolveBlogRepoName(blogRepoName, user.login),
     };
     if (!(await this.repositoryExists(client, blog))) {
-      const theme = parseRepoRef(themeRepo.trim() || DEFAULT_THEME_REPO);
-      new Notice(`博客仓库不存在，正在从主题模板创建 ${blog.name} ...`);
-      await client.createRepositoryFromTemplate(theme, {
-        owner: user.login,
-        name: blog.name,
-        private: false,
-      });
+      new Notice(`博客仓库不存在，正在创建 ${blog.name} ...`);
+      await client.createRepository({ name: blog.name, private: false });
     }
 
-    // 3. Secrets are always (re)written, keeping reruns idempotent.
+    // 3. Wire everything: Actions, secrets, Pages.
+    await client.enableActions(blog);
     await client.setActionsSecret(blog, "WIKI_URL", `https://github.com/${content.repository.owner}/${content.repository.name}.git`);
     await client.setActionsSecret(blog, "PAT", pat);
+    await client.setActionsSecret(blog, "THEME_REPO", themeRepo.trim() || DEFAULT_THEME_REPO);
     await client.setActionsSecret(content.repository, "BLOG_REPO", `${blog.owner}/${blog.name}`);
     await client.setActionsSecret(content.repository, "PAT", pat);
-
-    // 4. Enable Actions and GitHub Pages on the blog repository.
-    await client.enableActions(blog);
     if (configurePages) {
       await client.configurePages(blog);
     }
 
-    // 5. Kick off the first build directly.
-    await client.dispatchRepositoryEvent(blog, "contents-updated");
-    new Notice(`Setup 完成！博客仓库：${blog.name}，首次部署已触发。`);
+    // 4. Install the deploy workflow; this push triggers the first build.
+    await client.putFile(blog, ".github/workflows/deploy.yml", BLOG_DEPLOY_WORKFLOW, "Deploy theme: install deploy workflow");
 
-    // 6. Initialize the local Git working copy for obsidian-git.
-    await this.cloneToVault().catch((error: unknown) => {
-      new Notice(`Setup 完成，但本地 Git 初始化失败：${error instanceof Error ? error.message : String(error)}。可在操作区点击「克隆到本地」重试。`);
-    });
+    // 5. Make the local vault a full Git working copy for obsidian-git.
+    await this.ensureLocalGit(content.repository, contentBranch, pat);
+
+    new Notice(`部署完成！博客仓库：${blog.name}，首次构建已触发。`);
   }
 
-  /** Directly asks the blog repository to rebuild (no workflow round-trip). */
+  /** Directly asks the blog repository to rebuild. */
   async triggerDeploy(): Promise<void> {
     const client = this.client();
     const user = await client.getAuthenticatedUser();
@@ -189,7 +276,7 @@ export class BlogService {
       await client.dispatchRepositoryEvent(blog, "contents-updated");
     } catch (error) {
       if (isNotFound(error)) {
-        throw new Error("博客仓库不存在，请先「触发 Setup」。");
+        throw new Error("博客仓库不存在，请先「部署主题」。");
       }
       throw error;
     }
@@ -197,54 +284,27 @@ export class BlogService {
   }
 
   /**
-   * Clones the content repository into the Vault root (creates `.git`), so
-   * obsidian-git can Commit / Push / Pull without manual setup.
+   * Ensures the local vault is a complete Git working copy pointing at the
+   * content repository, so obsidian-git can Commit / Push / Pull directly.
    */
-  async cloneToVault(): Promise<void> {
-    const { pat } = this.requireSettings("克隆");
-    const client = new GitHubClient(pat);
-    const repository = await this.requireRepository(client);
-
-    const existingConfig = await this.deps.app.vault.adapter.read(".git/config").catch(() => null);
+  private async ensureLocalGit(
+    repository: GitHubRepositoryRef,
+    branch: string,
+    pat: string,
+  ): Promise<void> {
+    const existingConfig = await this.deps.app.vault.adapter
+      .read(".git/config")
+      .catch(() => null);
     if (existingConfig) {
       const existingRepository = parseGitHubRemote(existingConfig);
-      if (!existingRepository) {
-        throw new Error("当前 Vault 已有无法识别的 Git 远程配置，为避免覆盖已停止初始化。");
-      }
-      if (!sameRepository(existingRepository, repository)) {
+      if (existingRepository && !sameRepository(existingRepository, repository)) {
         throw new Error(
           `当前 Vault 已连接 ${existingRepository.owner}/${existingRepository.name}，不会覆盖为 ${repository.owner}/${repository.name}。`,
         );
       }
-
-      const [hasHead, hasIndex] = await Promise.all([
-        this.deps.app.vault.adapter.exists(".git/HEAD"),
-        this.deps.app.vault.adapter.exists(".git/index"),
-      ]);
-      if (hasHead && hasIndex) {
-        await this.updateObsidianGitCredentials(repository, pat);
-        new Notice("当前 Vault 的 Git 工作副本已就绪，凭据已更新。");
-        return;
-      }
     }
 
-    new Notice(`正在初始化 ${repository.owner}/${repository.name} 的 Git 工作副本...`);
-    await yieldToUi();
-    await this.initializeWithObsidianGit(repository, pat);
-    new Notice("初始化完成！现在可以用 obsidian-git 进行 Commit / Push / Pull。");
-  }
-
-  /**
-   * Reuses the bundled obsidian-git engine instead of shipping a second copy
-   * of isomorphic-git. The vault is non-empty, so this initializes, fetches,
-   * then checks out the generated template repository in place.
-   */
-  private async initializeWithObsidianGit(
-    repository: GitHubRepositoryRef,
-    pat: string,
-  ): Promise<void> {
     const { plugin, manager } = await this.getObsidianGit(repository, pat);
-    const ref = "main";
     const remote = "origin";
 
     await manager.init();
@@ -255,25 +315,17 @@ export class BlogService {
       if (!manager.git) {
         throw new Error("当前 obsidian-git 桌面端接口不兼容，请更新模板后重试。");
       }
-      // Force checkout is required because a downloaded template vault is not empty.
-      await manager.git.checkout(["-f", "-B", ref, `${remote}/${ref}`]);
+      // Force checkout aligns local HEAD/index with the branch we just wrote.
+      await manager.git.checkout(["-f", "-B", branch, `${remote}/${branch}`]);
     } else {
       // obsidian-git's mobile manager uses isomorphic-git and forces the checkout.
-      await manager.checkout(ref, remote);
+      await manager.checkout(branch, remote);
     }
 
-    await manager.setConfig(`branch.${ref}.remote`, remote);
-    await manager.setConfig(`branch.${ref}.merge`, `refs/heads/${ref}`);
+    await manager.setConfig(`branch.${branch}.remote`, remote);
+    await manager.setConfig(`branch.${branch}.merge`, `refs/heads/${branch}`);
     plugin.unloadPlugin?.();
     await plugin.init({ fromReload: true });
-  }
-
-  private async updateObsidianGitCredentials(
-    repository: GitHubRepositoryRef,
-    pat: string,
-  ): Promise<void> {
-    const { manager } = await this.getObsidianGit(repository, pat);
-    await manager.setRemote("origin", authenticatedGitHubUrl(repository, pat));
   }
 
   private async getObsidianGit(
@@ -304,6 +356,27 @@ export class BlogService {
     return { plugin, manager };
   }
 
+  /**
+   * Collects the vault files to push, honoring the vault's `.gitignore`
+   * (so plugin data containing the PAT never leaves the device).
+   */
+  private async collectVaultFiles(): Promise<Map<string, Uint8Array>> {
+    const rawRules = await this.deps.app.vault.adapter
+      .read(".gitignore")
+      .catch(() => null);
+    const rules = parseGitignore(rawRules ?? "");
+
+    const files = new Map<string, Uint8Array>();
+    for (const file of this.deps.app.vault.getFiles()) {
+      if (file.path.startsWith(".git/") || isIgnored(file.path, rules)) {
+        continue;
+      }
+      const data = await this.deps.app.vault.adapter.readBinary(file.path);
+      files.set(file.path, new Uint8Array(data));
+    }
+    return files;
+  }
+
   private client(): GitHubClient {
     const { pat } = this.requireSettings("操作");
     return new GitHubClient(pat);
@@ -321,34 +394,16 @@ export class BlogService {
     return value.trim() || `${login}.github.io`;
   }
 
-  private async requireRepository(client: GitHubClient): Promise<GitHubRepositoryRef> {
-    const { repository } = await this.detectContentRepository(client);
-    if (!repository) {
-      throw new Error("未识别到文章仓库。请先在设置中填写文章仓库名，或「触发 Setup」自动创建。");
-    }
-    return repository;
-  }
-
-  /**
-   * Creates the private content repository from the wiki template. The
-   * template content matches a fresh template zip, so cloning it yields the
-   * same files the user already has.
-   */
-  private async createRepository(
+  /** Creates the private content repository (empty; content is pushed next). */
+  private async createContentRepository(
     client: GitHubClient,
     owner: string,
     name: string,
   ): Promise<GitHubRepositoryRef> {
-    const { templateRepo } = this.deps.getSettings();
-    const template = parseRepoRef(templateRepo || DEFAULT_TEMPLATE_REPO);
     const safeName = sanitizeRepoName(name);
 
-    new Notice(`未识别到文章仓库，正在从模板创建 ${safeName} ...`);
-    const created = await client.createRepositoryFromTemplate(template, {
-      owner,
-      name: safeName,
-      private: true,
-    });
+    new Notice(`未识别到文章仓库，正在创建 ${safeName} ...`);
+    const created = await client.createRepository({ name: safeName, private: true });
 
     const repository = { owner, name: created.name };
     await this.deps.saveSettings({ repoName: created.name });
@@ -357,13 +412,13 @@ export class BlogService {
   }
 
   /**
-   * Resolves the content repository against the current user's account:
-   * 1. the manually entered repository name (exists → `configure`, missing → `create`);
-   * 2. the `origin` remote from `.git/config`, but only when it points at a
-   *    repository of the current user (desktop clones);
+   * Resolves the content repository target:
+   * 1. the manually entered repository name;
+   * 2. the `origin` remote from `.git/config`, when it points at the current
+   *    user's own account (desktop clones);
    * 3. a repository whose name matches the Vault folder (zip downloads).
-   * Returns the resolved repository (or `null`) together with the preferred
-   * name to use when Setup needs to create one.
+   * Returns the resolved repository (or `null`) plus the preferred name to
+   * create when deploying.
    */
   private async detectContentRepository(
     client: GitHubClient,
@@ -371,9 +426,7 @@ export class BlogService {
     const manual = this.deps.getSettings().repoName.trim();
     if (manual) {
       const user = await client.getAuthenticatedUser();
-      const candidate = { owner: user.login, name: manual };
-      const exists = await this.repositoryExists(client, candidate);
-      return { repository: exists ? candidate : null, preferredName: manual };
+      return { repository: { owner: user.login, name: manual }, preferredName: manual };
     }
 
     const config = await this.deps.app.vault.adapter
@@ -384,22 +437,20 @@ export class BlogService {
       if (remote) {
         const user = await client.getAuthenticatedUser();
         if (remote.owner.toLowerCase() === user.login.toLowerCase()) {
-          const exists = await this.repositoryExists(client, remote);
-          return { repository: exists ? remote : null, preferredName: remote.name };
+          return { repository: remote, preferredName: remote.name };
         }
-        // The remote points at someone else's repository: nothing usable.
+        // The remote points at someone else's repository: not usable.
         return { repository: null, preferredName: remote.name };
       }
     }
 
     const vaultName = this.deps.app.vault.getName();
     if (vaultName) {
-      const repos = await client.listUserRepos();
-      const hit = repos.find((repo) => repo.name === vaultName);
-      if (hit) {
-        return { repository: hit, preferredName: vaultName };
-      }
-      return { repository: null, preferredName: vaultName };
+      const user = await client.getAuthenticatedUser();
+      return {
+        repository: { owner: user.login, name: vaultName },
+        preferredName: vaultName,
+      };
     }
 
     return { repository: null, preferredName: "my-blog" };
@@ -419,6 +470,46 @@ export class BlogService {
       throw error;
     }
   }
+}
+
+// ----------------------------------------------------------------------
+// .gitignore support (subset: comments, `*` globs, trailing `/` for
+// directories; negation is not needed by the template's rules).
+// ----------------------------------------------------------------------
+
+interface IgnoreRule {
+  regex: RegExp;
+}
+
+function parseGitignore(content: string): IgnoreRule[] {
+  const rules: IgnoreRule[] = [];
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("!")) {
+      continue;
+    }
+    const pattern = trimmed.replace(/\/$/, "");
+    rules.push({ regex: gitignoreRegex(pattern) });
+  }
+  return rules;
+}
+
+function gitignoreRegex(pattern: string): RegExp {
+  const body = pattern.replace(/^\//, "");
+  const hasSlash = body.includes("/");
+  const escaped = body
+    .split("/")
+    .map((segment) => segment.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*"))
+    .join("/");
+  if (hasSlash) {
+    return new RegExp(`^${escaped}(/.*)?$`);
+  }
+  // A bare name matches at any depth.
+  return new RegExp(`(^|/)${escaped}(/.*)?$`);
+}
+
+function isIgnored(path: string, rules: IgnoreRule[]): boolean {
+  return rules.some((rule) => rule.regex.test(path));
 }
 
 function yieldToUi(): Promise<void> {
@@ -453,12 +544,4 @@ function sanitizeRepoName(name: string): string {
     .replace(/[^A-Za-z0-9._-]/g, "-")
     .replace(/^-+|-+$/g, "");
   return cleaned || "my-blog";
-}
-
-function parseRepoRef(value: string): GitHubRepositoryRef {
-  const match = value.trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
-  if (!match) {
-    throw new Error(`模板仓库格式应为 owner/repository：${value}`);
-  }
-  return { owner: match[1], name: match[2] };
 }

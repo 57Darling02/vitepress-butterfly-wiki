@@ -32,19 +32,13 @@ export default class VitePressButterflyPublisher extends Plugin {
 				onCheckReady: () => this.blog.checkReady(),
 				onSetup: () => this.blog.setup(),
 				onTrigger: () => this.blog.triggerDeploy(),
-				onClone: () => this.blog.cloneToVault(),
 			}),
 		);
 
 		this.addCommand({
 			id: "setup-blog",
-			name: "触发 Setup（创建博客仓库）",
-			callback: () => this.runWithFeedback("触发 Setup", () => this.blog.setup()),
-		});
-		this.addCommand({
-			id: "clone-repo",
-			name: "克隆文章仓库到本地",
-			callback: () => this.runWithFeedback("克隆", () => this.blog.cloneToVault()),
+			name: "部署主题（推送本地内容并触发构建）",
+			callback: () => this.runWithFeedback("部署主题", () => this.blog.setup()),
 		});
 		this.addCommand({
 			id: "trigger-deploy",

@@ -141,6 +141,13 @@ interface RequestOptions {
   readonly body?: unknown;
 }
 
+interface GitTreeEntry {
+  path: string;
+  mode: "100644" | "040000";
+  type: "blob" | "tree";
+  sha: string;
+}
+
 export class GitHubClient {
   private readonly token: string;
   private authenticatedUser?: Promise<GitHubUser>;
@@ -186,31 +193,181 @@ export class GitHubClient {
   }
 
   /**
-   * Creates a new repository from a template, copying all of its content
-   * (including workflows and the bundled plugin).
+   * Creates an empty repository (with a README so a default branch exists)
+   * under the authenticated user. No template and no fork relationship.
    */
-  async createRepositoryFromTemplate(
-    template: RepoRef,
+  async createRepository(options: {
+    name: string;
+    private: boolean;
+  }): Promise<GitHubRepository> {
+    const result = await this.request<GitHubRepositoryResponse>("/user/repos", {
+      method: "POST",
+      body: {
+        name: options.name,
+        private: options.private,
+        auto_init: true,
+      },
+    });
+
+    return this.toRepository(result);
+  }
+
+  /** Reads a file via the Contents API; returns `null` when it does not exist. */
+  async getFileContent(
+    repository: RepoRef,
+    path: string,
+  ): Promise<{ sha: string; content: string } | null> {
+    try {
+      return await this.request<{ sha: string; content: string }>(
+        `${this.repositoryPath(repository)}/contents/${encodeURIComponent(path)}`,
+      );
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.status === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /** Creates or overwrites a file on the repository's default branch. */
+  async putFile(
+    repository: RepoRef,
+    path: string,
+    content: string,
+    message: string,
+  ): Promise<void> {
+    const existing = await this.getFileContent(repository, path);
+    const body: { message: string; content: string; sha?: string } = {
+      message,
+      content: base64Encode(new TextEncoder().encode(content)),
+    };
+    if (existing) {
+      body.sha = existing.sha;
+    }
+
+    await this.request<void>(
+      `${this.repositoryPath(repository)}/contents/${encodeURIComponent(path)}`,
+      { method: "PUT", body },
+    );
+  }
+
+  async createBlob(repository: RepoRef, data: Uint8Array): Promise<{ sha: string }> {
+    return this.request<{ sha: string }>(
+      `${this.repositoryPath(repository)}/git/blobs`,
+      {
+        method: "POST",
+        body: { content: base64Encode(data), encoding: "base64" },
+      },
+    );
+  }
+
+  async createTree(
+    repository: RepoRef,
+    entries: readonly GitTreeEntry[],
+  ): Promise<{ sha: string }> {
+    return this.request<{ sha: string }>(
+      `${this.repositoryPath(repository)}/git/trees`,
+      {
+        method: "POST",
+        body: { tree: entries },
+      },
+    );
+  }
+
+  async createCommit(
+    repository: RepoRef,
     options: {
-      owner: string;
-      name: string;
-      private?: boolean;
+      message: string;
+      tree: string;
+      parents?: readonly string[];
+      author: { name: string; email: string; date: string };
     },
-  ): Promise<GitHubRepository> {
-    const result = await this.request<GitHubRepositoryResponse>(
-      `${this.repositoryPath(template)}/generate`,
+  ): Promise<{ sha: string }> {
+    return this.request<{ sha: string }>(
+      `${this.repositoryPath(repository)}/git/commits`,
       {
         method: "POST",
         body: {
-          owner: options.owner,
-          name: options.name,
-          private: options.private ?? true,
-          include_all_branches: false,
+          message: options.message,
+          tree: options.tree,
+          parents: options.parents ?? [],
+          author: options.author,
         },
       },
     );
+  }
 
-    return this.toRepository(result);
+  /** Moves (or creates, with force) the branch ref to a commit. */
+  async updateRef(repository: RepoRef, branch: string, sha: string): Promise<void> {
+    await this.request<void>(
+      `${this.repositoryPath(repository)}/git/refs/heads/${encodeURIComponent(branch)}`,
+      { method: "PATCH", body: { sha, force: true } },
+    );
+  }
+
+  /**
+   * Overwrites the default branch with the given files: builds blobs/trees,
+   * creates a root commit and force-moves the branch ref. This is the API
+   * equivalent of a force push and works identically on desktop and mobile.
+   */
+  async pushFiles(
+    repository: RepoRef,
+    branch: string,
+    files: ReadonlyMap<string, Uint8Array>,
+    options: {
+      message: string;
+      authorName: string;
+      authorEmail: string;
+    },
+  ): Promise<void> {
+    const buildTree = async (dir: string): Promise<string> => {
+      const entries: GitTreeEntry[] = [];
+      const children = new Map<string, string>();
+
+      for (const [path, data] of files) {
+        if (!path.startsWith(dir)) {
+          continue;
+        }
+        const rest = dir ? path.slice(dir.length) : path;
+        const slash = rest.indexOf("/");
+        if (slash === -1) {
+          entries.push({
+            path: rest,
+            mode: "100644",
+            type: "blob",
+            sha: (await this.createBlob(repository, data)).sha,
+          });
+        } else {
+          const name = rest.slice(0, slash);
+          if (!children.has(name)) {
+            children.set(name, dir + name + "/");
+          }
+        }
+      }
+
+      for (const [name, childDir] of children) {
+        entries.push({
+          path: name,
+          mode: "040000",
+          type: "tree",
+          sha: await buildTree(childDir),
+        });
+      }
+
+      return (await this.createTree(repository, entries)).sha;
+    };
+
+    const treeSha = await buildTree("");
+    const commit = await this.createCommit(repository, {
+      message: options.message,
+      tree: treeSha,
+      author: {
+        name: options.authorName,
+        email: options.authorEmail,
+        date: new Date().toISOString(),
+      },
+    });
+    await this.updateRef(repository, branch, commit.sha);
   }
 
   async listSecrets(repository: RepoRef): Promise<string[]> {
@@ -507,6 +664,15 @@ function throwIfAborted(signal?: AbortSignal): void {
 
 function wait(durationMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+}
+
+function base64Encode(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function isAbortError(error: unknown): boolean {

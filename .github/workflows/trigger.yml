@@ -17,7 +17,7 @@ jobs:
           BLOG_REPO: ${{ secrets.BLOG_REPO }}
         run: |
           if [ -z "$PAT" ] || [ -z "$BLOG_REPO" ]; then
-            echo "::warning::尚未初始化。请先在插件设置（VitePress Butterfly 发布）中填写 PAT 并「触发 Setup」完成初始化，之后推送才会自动触发博客更新。"
+            echo "::warning::尚未初始化。请先在插件设置（VitePress Butterfly 发布）中填写 PAT 并「部署主题」完成初始化，之后推送才会自动触发博客更新。"
             exit 0
           fi
           echo "initialized=true" >> "$GITHUB_OUTPUT"
