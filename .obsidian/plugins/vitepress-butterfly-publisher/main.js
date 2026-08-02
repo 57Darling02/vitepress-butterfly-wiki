@@ -4052,7 +4052,7 @@ var BlogService = class {
     const remote = parseGitHubRemote(config);
     if (remote && !sameRepository(remote, repository)) {
       throw new Error(
-        `\u5F53\u524D Vault \u5DF2\u8FDE\u63A5 ${repositoryFullName(remote)}\uFF1B\u4E3A\u907F\u514D\u8BEF\u63A8\u9001\uFF0C\u4E0D\u4F1A\u6539\u4E3A ${repositoryFullName(repository)}\u3002`
+        `\u5F53\u524D Vault \u5DF2\u8FDE\u63A5 ${repositoryFullName(remote)}\uFF0C\u8BF7\u79FB\u9664 GitHub \u4ED3\u5E93\u5E76\u5220\u9664\u672C\u5730 .git \u6587\u4EF6\u3002`
       );
     }
   }

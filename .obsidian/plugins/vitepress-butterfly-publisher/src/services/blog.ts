@@ -485,7 +485,7 @@ export class BlogService {
     const remote = parseGitHubRemote(config);
     if (remote && !sameRepository(remote, repository)) {
       throw new Error(
-        `当前 Vault 已连接 ${repositoryFullName(remote)}；为避免误推送，不会改为 ${repositoryFullName(repository)}。`,
+        `当前 Vault 已连接 ${repositoryFullName(remote)}，请移除 GitHub 仓库并删除本地 .git 文件。`,
       );
     }
   }
