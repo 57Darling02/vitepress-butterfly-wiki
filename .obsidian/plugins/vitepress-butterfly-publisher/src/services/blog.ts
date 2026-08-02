@@ -119,7 +119,9 @@ export class BlogService {
   async push(): Promise<PublishVaultResult> {
     try {
       const result = await this.publishOnce(false);
-      await this.notifyAndWaitDeploy();
+      if (result.changed) {
+        await this.notifyAndWaitDeploy();
+      }
       return result;
     } catch (error) {
       if (!isRefRejected(error)) {
@@ -132,7 +134,9 @@ export class BlogService {
       }
 
       const result = await this.publishOnce(true);
-      await this.notifyAndWaitDeploy();
+      if (result.changed) {
+        await this.notifyAndWaitDeploy();
+      }
       return result;
     }
   }
@@ -140,7 +144,9 @@ export class BlogService {
   /** Force-publishes, discarding any remote changes. */
   async forcePush(): Promise<PublishVaultResult> {
     const result = await this.publishOnce(true);
-    await this.notifyAndWaitDeploy();
+    if (result.changed) {
+      await this.notifyAndWaitDeploy();
+    }
     return result;
   }
 
@@ -172,9 +178,10 @@ export class BlogService {
     const repository = await this.requireRepository(client);
     const user = await client.getAuthenticatedUser();
 
-    new Notice("已发布，正在触发博客构建...");
+    // The API commit triggers a push event, which runs trigger.yml and
+    // dispatches the blog repository. Wait for the resulting deploy run.
+    new Notice("已发布，等待博客构建...");
     const startedAfter = new Date();
-    await client.dispatchWorkflow(repository, TRIGGER_WORKFLOW);
 
     const blogRepo = { owner: repository.owner, name: blogRepoName.trim() || `${user.login}.github.io` };
     try {

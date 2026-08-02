@@ -93,11 +93,18 @@ jobs:
           printf "%s" "$PAT" | gh secret set PAT -R "$WIKI_REPO"
 
       - name: Configure GitHub Pages
-        if: ${{ secrets.CONFIGURE_PAGES != 'false' }}
         env:
           GH_TOKEN: ${{ secrets.SETUP_PAT }}
+          CONFIGURE_PAGES: ${{ secrets.CONFIGURE_PAGES }}
           BLOG_REPO: ${{ steps.fork.outputs.blog_repo }}
         run: |
+          set -euo pipefail
+
+          if [ "${CONFIGURE_PAGES:-true}" = "false" ]; then
+            echo "Skipping GitHub Pages configuration."
+            exit 0
+          fi
+
           set +e
           gh api "repos/$BLOG_REPO/pages" >/dev/null 2>&1
           PAGES_EXISTS=$?

@@ -4332,7 +4332,9 @@ var BlogService = class {
   async push() {
     try {
       const result = await this.publishOnce(false);
-      await this.notifyAndWaitDeploy();
+      if (result.changed) {
+        await this.notifyAndWaitDeploy();
+      }
       return result;
     } catch (error) {
       if (!isRefRejected(error)) {
@@ -4343,14 +4345,18 @@ var BlogService = class {
         throw new Error("\u5DF2\u53D6\u6D88\u3002\u8BF7\u5148\u300C\u62C9\u53D6\u6700\u65B0\u300D\u6216\u624B\u52A8\u5904\u7406\u51B2\u7A81\u540E\u518D\u53D1\u5E03\u3002");
       }
       const result = await this.publishOnce(true);
-      await this.notifyAndWaitDeploy();
+      if (result.changed) {
+        await this.notifyAndWaitDeploy();
+      }
       return result;
     }
   }
   /** Force-publishes, discarding any remote changes. */
   async forcePush() {
     const result = await this.publishOnce(true);
-    await this.notifyAndWaitDeploy();
+    if (result.changed) {
+      await this.notifyAndWaitDeploy();
+    }
     return result;
   }
   async publishOnce(force) {
@@ -4377,9 +4383,8 @@ var BlogService = class {
     const client = new GitHubClient(pat);
     const repository = await this.requireRepository(client);
     const user = await client.getAuthenticatedUser();
-    new import_obsidian3.Notice("\u5DF2\u53D1\u5E03\uFF0C\u6B63\u5728\u89E6\u53D1\u535A\u5BA2\u6784\u5EFA...");
+    new import_obsidian3.Notice("\u5DF2\u53D1\u5E03\uFF0C\u7B49\u5F85\u535A\u5BA2\u6784\u5EFA...");
     const startedAfter = /* @__PURE__ */ new Date();
-    await client.dispatchWorkflow(repository, TRIGGER_WORKFLOW);
     const blogRepo = { owner: repository.owner, name: blogRepoName.trim() || `${user.login}.github.io` };
     try {
       const run = await client.waitForWorkflowRun(blogRepo, DEPLOY_WORKFLOW, {
