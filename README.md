@@ -119,5 +119,8 @@ layout: doc
 - 检查博客仓库 `Settings → Pages` 的 Source 是否为 `GitHub Actions`
 - 重新运行 Setup Blog 是安全的（幂等，会复用已存在的博客仓库）
 
+**还没运行 Setup Blog 就推送了文章，会报错吗？**
+不会。文章仓库的推送工作流会检测到尚未初始化并安全跳过，同时提示你先到 `Actions → Setup Blog` 完成初始化。
+
 **博客地址是什么？**
 如果博客仓库命名为 `用户名.github.io`，地址就是 `https://用户名.github.io`；如果命名为其他名称，地址为 `https://用户名.github.io/仓库名/`。

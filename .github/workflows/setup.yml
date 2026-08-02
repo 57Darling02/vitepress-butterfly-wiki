@@ -86,10 +86,6 @@ jobs:
           gh api --method PUT "repos/$BLOG_REPO/actions/permissions" \
             -f enabled=true -f allowed_actions=all
 
-          # The fork inherits the theme's legacy setup workflow; it is not needed here.
-          gh api --method PUT "repos/$BLOG_REPO/actions/workflows/setup-blog.yml/disable" || \
-            echo "::warning::Could not disable the legacy setup workflow in the blog repo."
-
       - name: Configure repository secrets
         env:
           GH_TOKEN: ${{ github.event.inputs.pat }}

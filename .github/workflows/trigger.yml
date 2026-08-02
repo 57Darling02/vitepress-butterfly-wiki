@@ -9,9 +9,23 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
+      - name: Check setup has been initialized
+        id: check
+        env:
+          PAT: ${{ secrets.PAT }}
+          BLOG_REPO: ${{ secrets.BLOG_REPO }}
+        run: |
+          if [ -z "$PAT" ] || [ -z "$BLOG_REPO" ]; then
+            echo "::warning::Setup Blog 尚未初始化。请先运行 Actions -> Setup Blog 完成初始化，之后推送才会自动触发博客更新。"
+            echo "::warning::Setup Blog has not been initialized yet. Run the Setup Blog workflow first."
+            exit 0
+          fi
+          echo "initialized=true" >> "$GITHUB_OUTPUT"
+
       - name: Dispatch event to blog repo
+        if: steps.check.outputs.initialized == 'true'
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.PAT }} # PAT stored in the content/wiki repo
-          repository: ${{ secrets.BLOG_REPO }} # e.g. 57Darling02/57Darling02.github.io
+          token: ${{ secrets.PAT }}
+          repository: ${{ secrets.BLOG_REPO }}
           event-type: contents-updated
