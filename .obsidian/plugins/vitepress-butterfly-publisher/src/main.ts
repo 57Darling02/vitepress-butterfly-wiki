@@ -27,8 +27,12 @@ export default class VitePressButterflyPublisher extends Plugin {
 		this.addSettingTab(
 			new PublisherSettingsTab(this.app, this, () => this.settings, (changes) => this.updateSettings(changes), {
 				onCheckPat: () => this.blog.checkPat(),
-				onConfigureArticleRepository: () => this.blog.configureArticleRepository(),
-				onConfigureBlogRepository: () => this.blog.configureBlogRepository(),
+				onCheckArticleRepository: () => this.blog.checkArticleRepository(),
+				onCheckBlogRepository: () => this.blog.checkBlogRepository(),
+				onConfigureArticleSecretsOnly: () => this.blog.configureArticleSecretsOnly(),
+				onCreateArticleRepository: () => this.blog.createArticleRepository(),
+				onConfigureBlogSecretsOnly: () => this.blog.configureBlogSecretsOnly(),
+				onCreateBlogRepository: () => this.blog.createBlogRepository(),
 				onTrigger: () => this.blog.triggerDeploy(),
 			}),
 		);

@@ -21,6 +21,14 @@ export interface PatCheckResult {
   suggestedBlogRepoName: string;
 }
 
+export interface RepoCheckResult {
+  exists: boolean;
+  repository: GitHubRepositoryRef | null;
+  private: boolean;
+  /** True when a previous creation was interrupted and can be resumed. */
+  pendingResume: boolean;
+}
+
 export interface RepositoryConfigurationResult {
   repository: GitHubRepositoryRef;
   created: boolean;
@@ -61,8 +69,11 @@ interface AppWithPluginRegistry extends App {
 }
 
 /**
- * Two independent, retry-safe repository setup actions. Existing repositories
- * are never overwritten; only their Actions secrets are refreshed.
+ * Each repository has an explicit two-step flow: a read-only check first,
+ * then one of two write actions ("configure secrets only" for an existing
+ * repository, "create and configure" for a missing one). Existing
+ * repositories are never overwritten. Every action is idempotent and can be
+ * retried safely after a network interruption.
  */
 export class BlogService {
   private cachedClient?: { pat: string; client: GitHubClient };
@@ -95,35 +106,95 @@ export class BlogService {
     this.cachedClient = undefined;
   }
 
-  /**
-   * Configures the article repository.
-   *
-   * Existing repository: only refresh BLOG_REPO and PAT.
-   * Missing repository: create a private empty repository, initialize/push the
-   * current Vault through obsidian-git, then write the same secrets.
-   */
-  async configureArticleRepository(): Promise<RepositoryConfigurationResult> {
+  // ------------------------------------------------------------------
+  // Repository checks (read-only).
+  // ------------------------------------------------------------------
+
+  async checkArticleRepository(): Promise<RepoCheckResult> {
+    const settings = this.requireVerifiedRepositoryNames("检测文章仓库");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const article = { owner: user.login, name: validateRepoName(settings.repoName, "文章仓库") };
+    return this.probeRepository(client, article, settings.pendingArticleRepo);
+  }
+
+  async checkBlogRepository(): Promise<RepoCheckResult> {
+    const settings = this.requireVerifiedRepositoryNames("检测博客仓库");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "博客仓库") };
+    return this.probeRepository(client, blog, settings.pendingBlogRepo);
+  }
+
+  private async probeRepository(
+    client: GitHubClient,
+    repository: GitHubRepositoryRef,
+    pendingMarker: string,
+  ): Promise<RepoCheckResult> {
+    try {
+      const info = await client.getRepository(repository);
+      return {
+        exists: true,
+        repository,
+        private: info.private,
+        pendingResume: pendingMarker === repositoryFullName(repository),
+      };
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.status === 404) {
+        return { exists: false, repository, private: false, pendingResume: false };
+      }
+      throw error;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Article repository.
+  // ------------------------------------------------------------------
+
+  /** Existing article repository: update BLOG_REPO and PAT only. */
+  async configureArticleSecretsOnly(): Promise<RepositoryConfigurationResult> {
     const settings = this.requireVerifiedRepositoryNames("配置文章仓库");
     const client = this.client();
     const user = await client.getAuthenticatedUser();
     const article = { owner: user.login, name: validateRepoName(settings.repoName, "文章仓库") };
     const blogName = validateRepoName(settings.blogRepoName, "博客仓库");
+
+    await this.writeArticleSecrets(client, article, user.login, blogName, settings.pat);
+    if (settings.pendingArticleRepo) {
+      await this.deps.saveSettings({ pendingArticleRepo: "" });
+    }
+    return { repository: article, created: false, initialized: false };
+  }
+
+  /**
+   * Missing article repository: prepare the local Git repository first
+   * (so local problems never leave an empty remote), create a private empty
+   * repository, write secrets, then upload. A previous interrupted creation
+   * is resumed instead of duplicated.
+   */
+  async createArticleRepository(): Promise<RepositoryConfigurationResult> {
+    const settings = this.requireVerifiedRepositoryNames("创建文章仓库");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const article = { owner: user.login, name: validateRepoName(settings.repoName, "文章仓库") };
+    const blogName = validateRepoName(settings.blogRepoName, "博客仓库");
     const fullName = repositoryFullName(article);
+    const pending = settings.pendingArticleRepo === fullName;
 
     let exists = await this.repositoryExists(client, article);
-    const pending = settings.pendingArticleRepo === fullName;
     let created = false;
-    const shouldInitialize = !exists || pending;
-
     let git: { plugin: ObsidianGitPlugin; manager: ObsidianGitManager } | undefined;
-    if (shouldInitialize) {
-      await this.assertLocalRepositoryTarget(article);
-      // Finish every local-only step before creating a remote repository, so
-      // local Git problems can never leave an empty repository on GitHub.
-      git = await this.prepareLocalRepository(article, settings.pat);
+
+    if (exists && !pending) {
+      // The check result is stale: the user chose "create" but the
+      // repository already exists. Never silently downgrade to secrets-only.
+      throw new Error("文章仓库已存在。请重新检测，并选择「仅配置变量」（不会修改仓库内容）。");
     }
 
     if (!exists) {
+      await this.assertLocalRepositoryTarget(article);
+      git = await this.prepareLocalRepository(article, settings.pat);
+
       // Save intent before the request. If GitHub creates the repository but
       // the response is lost, retrying continues the upload instead of
       // mistaking it for a pre-existing repository.
@@ -135,54 +206,96 @@ export class BlogService {
           autoInit: false,
         });
         created = true;
-        exists = true;
       } catch (error) {
-        if (!(await this.createdDespiteError(client, article, error))) {
+        if (!(await this.createdDespiteError(client, article, error, pending))) {
           throw error;
         }
         created = true;
-        exists = true;
       }
+      exists = true;
+    } else if (pending) {
+      // Previous creation succeeded but the upload was interrupted.
+      git = await this.prepareLocalRepository(article, settings.pat);
     }
 
     // Write secrets before the first push so trigger.yml sees a complete
     // configuration immediately; this avoids one skipped first deployment.
-    await client.setActionsSecrets(article, {
-      BLOG_REPO: `${user.login}/${blogName}`,
-      PAT: settings.pat,
-    });
+    await this.writeArticleSecrets(client, article, user.login, blogName, settings.pat);
 
-    if (shouldInitialize && exists && git) {
+    if (created || pending) {
+      if (!git) {
+        git = await this.prepareLocalRepository(article, settings.pat);
+      }
       await this.pushPreparedLocalRepository(git, article, settings.pat);
-      await this.deps.saveSettings({ pendingArticleRepo: "" });
     }
+    await this.deps.saveSettings({ pendingArticleRepo: "" });
 
     return {
       repository: article,
       created,
-      initialized: shouldInitialize,
+      initialized: created || pending,
     };
   }
 
-  /**
-   * Configures the public blog repository.
-   *
-   * Existing repository: only refresh WIKI_URL and PAT (content untouched).
-   * Missing repository: create it once from the official GitHub template,
-   * then configure secrets, Pages and the first build.
-   */
-  async configureBlogRepository(): Promise<RepositoryConfigurationResult> {
+  private async writeArticleSecrets(
+    client: GitHubClient,
+    article: GitHubRepositoryRef,
+    owner: string,
+    blogName: string,
+    pat: string,
+  ): Promise<void> {
+    try {
+      await client.setActionsSecrets(article, {
+        BLOG_REPO: `${owner}/${blogName}`,
+        PAT: pat,
+      });
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.status === 404) {
+        throw new Error("文章仓库不存在或无权访问，请重新检测后再试。");
+      }
+      throw error;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Blog repository.
+  // ------------------------------------------------------------------
+
+  /** Existing blog repository: update WIKI_URL and PAT only. */
+  async configureBlogSecretsOnly(): Promise<RepositoryConfigurationResult> {
     const settings = this.requireVerifiedRepositoryNames("配置博客仓库");
     const client = this.client();
     const user = await client.getAuthenticatedUser();
     const articleName = validateRepoName(settings.repoName, "文章仓库");
     const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "博客仓库") };
+
+    await this.writeBlogSecrets(client, blog, user.login, articleName, settings.pat);
+    if (settings.pendingBlogRepo) {
+      await this.deps.saveSettings({ pendingBlogRepo: "" });
+    }
+    return { repository: blog, created: false, initialized: false };
+  }
+
+  /**
+   * Missing blog repository: create it once from the official GitHub
+   * template, then configure secrets, Pages and the first build. A previous
+   * interrupted creation is resumed instead of duplicated.
+   */
+  async createBlogRepository(): Promise<RepositoryConfigurationResult> {
+    const settings = this.requireVerifiedRepositoryNames("创建博客仓库");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const articleName = validateRepoName(settings.repoName, "文章仓库");
+    const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "博客仓库") };
     const fullName = repositoryFullName(blog);
+    const pending = settings.pendingBlogRepo === fullName;
 
     let exists = await this.repositoryExists(client, blog);
-    const pending = settings.pendingBlogRepo === fullName;
     let created = false;
-    const shouldInitialize = !exists || pending;
+
+    if (exists && !pending) {
+      throw new Error("博客仓库已存在。请重新检测，并选择「仅配置变量」（不会修改仓库内容）。");
+    }
 
     if (!exists) {
       await this.deps.saveSettings({ pendingBlogRepo: fullName });
@@ -193,27 +306,19 @@ export class BlogService {
           private: false,
         });
         created = true;
-        exists = true;
       } catch (error) {
-        if (!(await this.createdDespiteError(client, blog, error))) {
+        if (!(await this.createdDespiteError(client, blog, error, pending))) {
           throw error;
         }
         created = true;
-        exists = true;
       }
+      exists = true;
     }
 
-    if (!exists) {
-      throw new Error(`博客仓库 ${fullName} 尚不可用，请稍后直接重试。`);
-    }
-
-    await client.setActionsSecrets(blog, {
-      WIKI_URL: `https://github.com/${user.login}/${articleName}.git`,
-      PAT: settings.pat,
-    });
+    await this.writeBlogSecrets(client, blog, user.login, articleName, settings.pat);
 
     let warning: string | undefined;
-    if (shouldInitialize) {
+    if (created || pending) {
       try {
         await client.configurePages(blog);
       } catch (error) {
@@ -234,10 +339,34 @@ export class BlogService {
     return {
       repository: blog,
       created,
-      initialized: shouldInitialize,
+      initialized: created || pending,
       warning,
     };
   }
+
+  private async writeBlogSecrets(
+    client: GitHubClient,
+    blog: GitHubRepositoryRef,
+    owner: string,
+    articleName: string,
+    pat: string,
+  ): Promise<void> {
+    try {
+      await client.setActionsSecrets(blog, {
+        WIKI_URL: `https://github.com/${owner}/${articleName}.git`,
+        PAT: pat,
+      });
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.status === 404) {
+        throw new Error("博客仓库不存在或无权访问，请重新检测后再试。");
+      }
+      throw error;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Shared helpers.
+  // ------------------------------------------------------------------
 
   async triggerDeploy(): Promise<void> {
     const settings = this.requireVerifiedPat("触发部署");
@@ -295,7 +424,7 @@ export class BlogService {
       await git.manager.setRemote("origin", authenticatedGitHubUrl(repository, pat));
       await git.manager.updateUpstreamBranch(`origin/${DEFAULT_BRANCH}`);
     } catch (error) {
-      throw new Error(`首次上传中断：${errorMessage(error)}。请直接重新点击「配置文章仓库」。`);
+      throw new Error(`首次上传中断：${errorMessage(error)}。请直接重新点击「创建仓库并配置」。`);
     }
 
     // The remote push is already complete. Reload failure should not make the
@@ -365,11 +494,15 @@ export class BlogService {
     client: GitHubClient,
     repository: GitHubRepositoryRef,
     error: unknown,
+    pending: boolean,
   ): Promise<boolean> {
-    // 422 commonly means a previous timed-out creation actually succeeded.
-    // For network/timeout errors, one probe provides the same recovery without
-    // introducing background polling or many extra requests.
+    // 422 with a matching pending marker means a previous timed-out creation
+    // actually succeeded; probe once and resume. Without the marker, a 422 is
+    // a real conflict and the user must re-check.
     if (error instanceof GitHubApiError && error.status !== 422) {
+      return false;
+    }
+    if (!pending) {
       return false;
     }
     await wait(600);
