@@ -1,6 +1,6 @@
 # VitePress-Butterfly 文章仓库模板
 
-这是 [VitePress-Butterfly](https://github.com/57Darling02/VitePress_butterfly) 博客主题的**文章仓库模板**，也是整个博客的使用入口。仓库内置 Obsidian 发布插件，**全程无需安装 Git**，手机、平板、电脑都能用。
+这是 [VitePress-Butterfly](https://github.com/57Darling02/VitePress_butterfly) 博客主题的**文章仓库模板**，也是整个博客的使用入口。仓库内置 Obsidian 发布插件和 obsidian-git，手机和平板无需安装 Git；桌面端沿用 obsidian-git 的系统 Git。
 
 博客采用双仓库模型：
 
@@ -18,7 +18,7 @@
 - **零门槛（推荐）**：直接下载本模板的 ZIP（`Code → Download ZIP`，公开仓库无需登录），解压后重命名为你的博客目录。之后插件会自动为你创建私密文章仓库
 - **先建仓库**：点击右上角 `Use this template` 创建自己的私密仓库（名称随意，例如 `my-blog`），再下载 ZIP 或 `git clone`
 
-> 下载的压缩包不包含 `.git` 目录，这没关系——发布插件通过 GitHub API 工作，不需要本地 Git。
+> 下载的压缩包不包含 `.git` 目录，这没关系——检测和 Setup 通过 GitHub API 完成；随后 Publisher 会调用 obsidian-git 初始化本地工作副本。
 
 ### 3. 用 Obsidian 打开
 
@@ -36,7 +36,7 @@ Setup 会自动完成：fork 主题仓库 → 配置两个仓库的 secrets → 
 
 ### 5. 开始写作
 
-Setup 完成后插件**自动把文章仓库克隆到本地**（生成 `.git`，URL 已嵌入 PAT），之后：
+Setup 完成后插件会调用内置的 obsidian-git，**自动初始化文章仓库的 Git 工作副本**（生成 `.git` 并配置本地凭据），之后：
 
 1. 在 Obsidian 中写 Markdown（命令面板可运行 **新建博客文章** 生成带 frontmatter 的文章）
 2. obsidian-git 面板：**Commit** → **Push**——推送会自动触发博客重新构建部署
@@ -51,11 +51,11 @@ Setup 完成后插件**自动把文章仓库克隆到本地**（生成 `.git`，
 | **VitePress Butterfly Publisher**（内置） | 初始化与部署：创建文章仓库、配置 secrets、触发 Setup、克隆到本地、触发重建 |
 | **obsidian-git**（内置） | 日常内容同步：Commit / Push / Pull，桌面端与移动端均可 |
 
-> obsidian-git 在移动端内置纯 JS 的 Git 实现（isomorphic-git），无需安装任何软件，支持 PAT 认证、可处理大仓库。Setup 自动克隆时已把 PAT 嵌入仓库地址（保存在本地 `.git/config`，不会上传），移动端可直接 Commit / Push / Pull，无需额外配置。
+> Publisher 直接复用 obsidian-git 的 Git 引擎，不会重复加载第二套 Git。obsidian-git 在移动端内置纯 JS Git，无需安装软件；Publisher 会把 PAT 写入 obsidian-git 的本地凭据，并写入本地 `.git/config` 的远程地址（不会上传），随后可直接 Commit / Push / Pull。
 
 ## 内置插件说明
 
-插件面板（`设置 → VitePress Butterfly 发布`）按步骤提供四项检测，每项只验证自己的边界：
+插件面板（`设置 → VitePress Butterfly 发布`）按步骤提供四项检测，每项只验证自己的边界。点击检测后会立即显示旋转加载状态；GitHub 15 秒无响应时会自动结束并提示网络超时：
 
 | 检测 | 验证内容 |
 |---|---|
@@ -64,7 +64,7 @@ Setup 完成后插件**自动把文章仓库克隆到本地**（生成 `.git`，
 | 博客样式仓库 | 博客仓库能否访问（留空默认 `用户名.github.io`） |
 | 就绪检测 | 两个仓库的 Actions secrets 是否完整（Setup 完成后才就绪） |
 
-操作区提供两个动作：
+操作区提供三个动作：
 
 | 操作 | 作用 |
 |---|---|
@@ -76,7 +76,7 @@ Setup 完成后插件**自动把文章仓库克隆到本地**（生成 `.git`，
 
 ### 安全说明
 
-- PAT 只保存在本机插件设置（`.obsidian/plugins/vitepress-butterfly-publisher/data.json`）和 GitHub 加密 secrets 中，不会上传
+- PAT 只保存在本机 Publisher 设置、obsidian-git 本地凭据（桌面端远程地址也可能包含 PAT）以及 GitHub 加密 secrets 中，不会提交到仓库
 - 建议使用专用 PAT；泄露后可随时在 GitHub 吊销
 - 文章仓库推荐保持私密；博客仓库是公开的（GitHub Pages 部署）
 

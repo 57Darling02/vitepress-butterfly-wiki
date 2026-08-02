@@ -1,7 +1,6 @@
-import { Notice, App } from "obsidian";
+import { Notice, App, Platform } from "obsidian";
 
-import { GitHubClient, GitHubRepositoryRef } from "./github";
-import { cloneRepository } from "./gitclone";
+import { GitHubApiError, GitHubClient, GitHubRepositoryRef } from "./github";
 import type { PluginSettings } from "../settings";
 
 const DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
@@ -19,6 +18,34 @@ export interface BlogServiceDeps {
   app: App;
   getSettings(): PluginSettings;
   saveSettings(changes: Partial<PluginSettings>): Promise<void>;
+}
+
+interface ObsidianGitManager {
+  init(): Promise<void>;
+  setRemote(remote: string, url: string): Promise<void>;
+  fetch(remote?: string): Promise<void>;
+  checkout(ref: string, remote?: string): Promise<unknown>;
+  setConfig(path: string, value: string): Promise<unknown>;
+  /** simple-git instance exposed by obsidian-git on desktop. */
+  git?: {
+    checkout(options: string[]): Promise<unknown>;
+  };
+}
+
+interface ObsidianGitPlugin {
+  gitManager?: ObsidianGitManager;
+  localStorage?: {
+    setUsername(value: string): unknown;
+    setPassword(value: string): unknown;
+  };
+  init(options?: { fromReload?: boolean }): Promise<void>;
+  unloadPlugin?(): void;
+}
+
+interface AppWithPluginRegistry extends App {
+  plugins?: {
+    getPlugin(id: string): unknown;
+  };
 }
 
 export interface RepoCheckResult {
@@ -70,12 +97,15 @@ export class BlogService {
     const user = await client.getAuthenticatedUser();
     const name = this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login);
 
+    const repository = { owner: user.login, name };
     try {
-      const repository = { owner: user.login, name };
       await client.getRepository(repository);
       return { repository, accessible: true };
-    } catch {
-      return { repository: { owner: user.login, name }, accessible: false };
+    } catch (error) {
+      if (isNotFound(error)) {
+        return { repository, accessible: false };
+      }
+      throw error;
     }
   }
 
@@ -85,18 +115,15 @@ export class BlogService {
     const user = await client.getAuthenticatedUser();
 
     const content = await this.detectRepository(client);
-    const contentMissing = content
-      ? missingSecrets(await client.listSecrets(content), CONTENT_REQUIRED_SECRETS)
-      : [...CONTENT_REQUIRED_SECRETS];
-
     const blogName = this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login);
     const blog = { owner: user.login, name: blogName };
-    let blogMissing: string[];
-    try {
-      blogMissing = missingSecrets(await client.listSecrets(blog), BLOG_REQUIRED_SECRETS);
-    } catch {
-      blogMissing = [...BLOG_REQUIRED_SECRETS];
-    }
+
+    const [contentMissing, blogMissing] = await Promise.all([
+      content
+        ? getMissingSecrets(client, content, CONTENT_REQUIRED_SECRETS)
+        : Promise.resolve([...CONTENT_REQUIRED_SECRETS]),
+      getMissingSecrets(client, blog, BLOG_REQUIRED_SECRETS),
+    ]);
 
     return {
       contentMissing,
@@ -173,18 +200,103 @@ export class BlogService {
     const client = new GitHubClient(pat);
     const repository = await this.requireRepository(client);
 
-    if (await this.deps.app.vault.adapter.exists(".git")) {
-      new Notice("当前 Vault 已有 .git 目录，无需克隆。");
-      return;
+    const existingConfig = await this.deps.app.vault.adapter.read(".git/config").catch(() => null);
+    if (existingConfig) {
+      const existingRepository = parseGitHubRemote(existingConfig);
+      if (!existingRepository) {
+        throw new Error("当前 Vault 已有无法识别的 Git 远程配置，为避免覆盖已停止初始化。");
+      }
+      if (!sameRepository(existingRepository, repository)) {
+        throw new Error(
+          `当前 Vault 已连接 ${existingRepository.owner}/${existingRepository.name}，不会覆盖为 ${repository.owner}/${repository.name}。`,
+        );
+      }
+
+      const [hasHead, hasIndex] = await Promise.all([
+        this.deps.app.vault.adapter.exists(".git/HEAD"),
+        this.deps.app.vault.adapter.exists(".git/index"),
+      ]);
+      if (hasHead && hasIndex) {
+        await this.updateObsidianGitCredentials(repository, pat);
+        new Notice("当前 Vault 的 Git 工作副本已就绪，凭据已更新。");
+        return;
+      }
     }
 
-    new Notice(`正在克隆 ${repository.owner}/${repository.name} 到本地...`);
-    await cloneRepository({
-      vault: this.deps.app.vault,
-      url: `https://${pat}@github.com/${repository.owner}/${repository.name}.git`,
-      token: pat,
-    });
-    new Notice("克隆完成！现在可以用 obsidian-git 进行 Commit / Push / Pull。");
+    new Notice(`正在初始化 ${repository.owner}/${repository.name} 的 Git 工作副本...`);
+    await yieldToUi();
+    await this.initializeWithObsidianGit(repository, pat);
+    new Notice("初始化完成！现在可以用 obsidian-git 进行 Commit / Push / Pull。");
+  }
+
+  /**
+   * Reuses the bundled obsidian-git engine instead of shipping a second copy
+   * of isomorphic-git. The vault is non-empty, so this initializes, fetches,
+   * then checks out the generated template repository in place.
+   */
+  private async initializeWithObsidianGit(
+    repository: GitHubRepositoryRef,
+    pat: string,
+  ): Promise<void> {
+    const { plugin, manager } = await this.getObsidianGit(repository, pat);
+    const ref = "main";
+    const remote = "origin";
+
+    await manager.init();
+    await manager.setRemote(remote, authenticatedGitHubUrl(repository, pat));
+    await manager.fetch(remote);
+
+    if (Platform.isDesktopApp) {
+      if (!manager.git) {
+        throw new Error("当前 obsidian-git 桌面端接口不兼容，请更新模板后重试。");
+      }
+      // Force checkout is required because a downloaded template vault is not empty.
+      await manager.git.checkout(["-f", "-B", ref, `${remote}/${ref}`]);
+    } else {
+      // obsidian-git's mobile manager uses isomorphic-git and forces the checkout.
+      await manager.checkout(ref, remote);
+    }
+
+    await manager.setConfig(`branch.${ref}.remote`, remote);
+    await manager.setConfig(`branch.${ref}.merge`, `refs/heads/${ref}`);
+    plugin.unloadPlugin?.();
+    await plugin.init({ fromReload: true });
+  }
+
+  private async updateObsidianGitCredentials(
+    repository: GitHubRepositoryRef,
+    pat: string,
+  ): Promise<void> {
+    const { manager } = await this.getObsidianGit(repository, pat);
+    await manager.setRemote("origin", authenticatedGitHubUrl(repository, pat));
+  }
+
+  private async getObsidianGit(
+    repository: GitHubRepositoryRef,
+    pat: string,
+  ): Promise<{ plugin: ObsidianGitPlugin; manager: ObsidianGitManager }> {
+    const registry = (this.deps.app as AppWithPluginRegistry).plugins;
+    const plugin = registry?.getPlugin("obsidian-git") as ObsidianGitPlugin | null | undefined;
+    if (!plugin) {
+      throw new Error("未检测到已启用的 obsidian-git，请先启用它再重试。");
+    }
+    if (!plugin.localStorage) {
+      throw new Error("obsidian-git 尚未初始化，请重启 Obsidian 后重试。");
+    }
+
+    // GitHub Basic authentication accepts the account login and PAT.
+    plugin.localStorage.setUsername(repository.owner);
+    plugin.localStorage.setPassword(pat);
+
+    if (!plugin.gitManager) {
+      await plugin.init({ fromReload: true });
+    }
+    const manager = plugin.gitManager;
+    if (!manager) {
+      throw new Error("无法初始化 obsidian-git，请确认内置插件版本完整。");
+    }
+
+    return { plugin, manager };
   }
 
   private client(): GitHubClient {
@@ -252,9 +364,12 @@ export class BlogService {
       try {
         await client.getRepository({ owner: user.login, name: manual });
         return { owner: user.login, name: manual };
-      } catch {
-        // The manually entered name does not exist yet; Setup will create it.
-        return null;
+      } catch (error) {
+        if (isNotFound(error)) {
+          // The manually entered name does not exist yet; Setup will create it.
+          return null;
+        }
+        throw error;
       }
     }
 
@@ -262,11 +377,17 @@ export class BlogService {
       .read(".git/config")
       .catch(() => null);
     if (config) {
-      const match = config.match(
-        /url\s*=\s*(?:https?:\/\/|git:\/\/|git@)(?:www\.)?github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\s*$/m,
-      );
-      if (match) {
-        return { owner: match[1], name: match[2] };
+      const repository = parseGitHubRemote(config);
+      if (repository) {
+        try {
+          await client.getRepository(repository);
+          return repository;
+        } catch (error) {
+          if (isNotFound(error)) {
+            return null;
+          }
+          throw error;
+        }
       }
     }
 
@@ -281,6 +402,47 @@ export class BlogService {
 
     return null;
   }
+}
+
+function yieldToUi(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, 0));
+}
+
+async function getMissingSecrets(
+  client: GitHubClient,
+  repository: GitHubRepositoryRef,
+  required: readonly string[],
+): Promise<string[]> {
+  try {
+    return missingSecrets(await client.listSecrets(repository), required);
+  } catch (error) {
+    if (isNotFound(error)) {
+      return [...required];
+    }
+    throw error;
+  }
+}
+
+function isNotFound(error: unknown): boolean {
+  return error instanceof GitHubApiError && error.status === 404;
+}
+
+function parseGitHubRemote(config: string): GitHubRepositoryRef | null {
+  const match = config.match(
+    /url\s*=\s*(?:https?:\/\/(?:[^@\s/]+@)?|git:\/\/|git@)(?:www\.)?github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\s*$/m,
+  );
+  return match ? { owner: match[1], name: match[2] } : null;
+}
+
+function sameRepository(left: GitHubRepositoryRef, right: GitHubRepositoryRef): boolean {
+  return left.owner.toLowerCase() === right.owner.toLowerCase()
+    && left.name.toLowerCase() === right.name.toLowerCase();
+}
+
+function authenticatedGitHubUrl(repository: GitHubRepositoryRef, pat: string): string {
+  const owner = encodeURIComponent(repository.owner);
+  const token = encodeURIComponent(pat);
+  return `https://${owner}:${token}@github.com/${repository.owner}/${repository.name}.git`;
 }
 
 function missingSecrets(actual: readonly string[], required: readonly string[]): string[] {

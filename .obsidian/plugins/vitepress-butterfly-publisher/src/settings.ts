@@ -80,10 +80,11 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		const settings = this.getSettings();
 
 		// --- Step 1: PAT ---
-		const patStatus = this.createStatus(containerEl);
-		new Setting(containerEl)
+		const patSetting = new Setting(containerEl)
 			.setName("GitHub PAT")
-			.setDesc("需要 repo + workflow 权限，仅保存在本机。")
+			.setDesc("需要 repo + workflow 权限，仅保存在本机。");
+		const patStatus = this.createStatus(patSetting.descEl);
+		patSetting
 			.addText((text) => {
 				text.inputEl.type = "password";
 				text.inputEl.autocomplete = "off";
@@ -91,23 +92,34 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				this.bindText(text, "pat", settings.pat, (value) => value.trim());
 			})
 			.addExtraButton((button) => {
-				this.addCheckButton(button, "检测连通性", () => this.actions.onCheckPat().then(
+				this.addCheckButton(
+					button,
+					patStatus,
+					"检测连通性",
+					"正在连接 GitHub…",
+					() => this.actions.onCheckPat(),
 					(login) => this.setStatus(patStatus, "ok", `✓ 已连接 @${login}`),
-					(error) => this.setStatus(patStatus, "error", this.errorMessage(error, "✗ 连接失败")),
-				));
+					"连接失败",
+				);
 			});
 
 		// --- Step 2: content repository ---
-		const contentStatus = this.createStatus(containerEl);
-		new Setting(containerEl)
+		const contentSetting = new Setting(containerEl)
 			.setName("博客文章仓库")
-			.setDesc("当前 Vault 对应的文章仓库；留空自动识别（Git 克隆目录或 Vault 名称）。")
+			.setDesc("当前 Vault 对应的文章仓库；留空自动识别（Git 克隆目录或 Vault 名称）。");
+		const contentStatus = this.createStatus(contentSetting.descEl);
+		contentSetting
 			.addText((text) => {
 				text.setPlaceholder("自动识别");
 				this.bindText(text, "repoName", settings.repoName, (value) => value.trim());
 			})
 			.addExtraButton((button) => {
-				this.addCheckButton(button, "检测仓库", () => this.actions.onCheckContentRepo().then(
+				this.addCheckButton(
+					button,
+					contentStatus,
+					"检测仓库",
+					"正在检测文章仓库…",
+					() => this.actions.onCheckContentRepo(),
 					(result) => this.setStatus(
 						contentStatus,
 						result.accessible ? "ok" : "warn",
@@ -115,21 +127,27 @@ export class PublisherSettingsTab extends PluginSettingTab {
 							? `✓ 可访问 ${result.repository?.owner}/${result.repository?.name}`
 							: "未识别到可访问的仓库（触发 Setup 会自动创建）",
 					),
-					(error) => this.setStatus(contentStatus, "error", this.errorMessage(error, "✗ 检测失败")),
-				));
+					"文章仓库检测失败",
+				);
 			});
 
 		// --- Step 3: blog (theme) repository ---
-		const blogStatus = this.createStatus(containerEl);
-		new Setting(containerEl)
+		const blogSetting = new Setting(containerEl)
 			.setName("博客样式仓库")
-			.setDesc("Setup 创建的公开博客仓库；留空默认 你的用户名.github.io。")
+			.setDesc("Setup 创建的公开博客仓库；留空默认 你的用户名.github.io。");
+		const blogStatus = this.createStatus(blogSetting.descEl);
+		blogSetting
 			.addText((text) => {
 				text.setPlaceholder("yourname.github.io");
 				this.bindText(text, "blogRepoName", settings.blogRepoName, (value) => value.trim());
 			})
 			.addExtraButton((button) => {
-				this.addCheckButton(button, "检测仓库", () => this.actions.onCheckBlogRepo().then(
+				this.addCheckButton(
+					button,
+					blogStatus,
+					"检测仓库",
+					"正在检测样式仓库…",
+					() => this.actions.onCheckBlogRepo(),
 					(result) => this.setStatus(
 						blogStatus,
 						result.accessible ? "ok" : "warn",
@@ -137,17 +155,23 @@ export class PublisherSettingsTab extends PluginSettingTab {
 							? `✓ 可访问 ${result.repository?.owner}/${result.repository?.name}`
 							: "仓库不存在（触发 Setup 时会创建）",
 					),
-					(error) => this.setStatus(blogStatus, "error", this.errorMessage(error, "✗ 检测失败")),
-				));
+					"样式仓库检测失败",
+				);
 			});
 
 		// --- Step 4: readiness ---
-		const readyStatus = this.createStatus(containerEl);
-		new Setting(containerEl)
+		const readySetting = new Setting(containerEl)
 			.setName("就绪检测")
-			.setDesc("检查两个仓库的 Actions secrets 是否完整配置。")
+			.setDesc("检查两个仓库的 Actions secrets 是否完整配置。");
+		const readyStatus = this.createStatus(readySetting.descEl);
+		readySetting
 			.addExtraButton((button) => {
-				this.addCheckButton(button, "检测就绪状态", () => this.actions.onCheckReady().then(
+				this.addCheckButton(
+					button,
+					readyStatus,
+					"检测就绪状态",
+					"正在检查部署配置…",
+					() => this.actions.onCheckReady(),
 					(result) => this.setStatus(
 						readyStatus,
 						result.ready ? "ok" : "warn",
@@ -155,8 +179,8 @@ export class PublisherSettingsTab extends PluginSettingTab {
 							? "✓ 全部就绪，推送即可自动部署"
 							: this.readinessText(result),
 					),
-					(error) => this.setStatus(readyStatus, "error", this.errorMessage(error, "✗ 检测失败")),
-				));
+					"就绪检测失败",
+				);
 			});
 
 		// --- Advanced ---
@@ -198,29 +222,86 @@ export class PublisherSettingsTab extends PluginSettingTab {
 	private createStatus(containerEl: HTMLElement): HTMLSpanElement {
 		const span = containerEl.createSpan({ cls: "vitepress-butterfly-check-status" });
 		span.textContent = "未检测";
+		span.setAttribute("aria-live", "polite");
 		return span;
 	}
 
 	private setStatus(
 		el: HTMLSpanElement,
-		kind: "ok" | "warn" | "error",
+		kind: "loading" | "ok" | "warn" | "error",
 		message: string,
 	): void {
 		el.textContent = message;
-		el.removeClass("vpb-ok", "vpb-warn", "vpb-error");
-		el.addClass(kind === "ok" ? "vpb-ok" : kind === "warn" ? "vpb-warn" : "vpb-error");
+		el.removeClass("vpb-loading", "vpb-ok", "vpb-warn", "vpb-error");
+		el.addClass(
+			kind === "loading"
+				? "vpb-loading"
+				: kind === "ok"
+					? "vpb-ok"
+					: kind === "warn"
+						? "vpb-warn"
+						: "vpb-error",
+		);
 	}
 
-	private addCheckButton(
+	private addCheckButton<T>(
 		button: ExtraButtonComponent,
+		statusEl: HTMLSpanElement,
 		tooltip: string,
-		run: () => Promise<void>,
+		pendingMessage: string,
+		run: () => Promise<T>,
+		onSuccess: (result: T) => void,
+		failureLabel: string,
 	): void {
 		button.setIcon("search").setTooltip(tooltip);
 		button.onClick(() => {
-			button.setDisabled(true);
-			void run().finally(() => button.setDisabled(false));
+			void this.runCheck(
+				button,
+				statusEl,
+				tooltip,
+				pendingMessage,
+				run,
+				onSuccess,
+				failureLabel,
+			);
 		});
+	}
+
+	private async runCheck<T>(
+		button: ExtraButtonComponent,
+		statusEl: HTMLSpanElement,
+		tooltip: string,
+		pendingMessage: string,
+		run: () => Promise<T>,
+		onSuccess: (result: T) => void,
+		failureLabel: string,
+	): Promise<void> {
+		if (button.extraSettingsEl.classList.contains("vpb-check-running")) {
+			return;
+		}
+
+		button.setDisabled(true).setIcon("loader-2").setTooltip(pendingMessage);
+		button.extraSettingsEl.classList.add("vpb-check-running");
+		button.extraSettingsEl.setAttribute("aria-busy", "true");
+		this.setStatus(statusEl, "loading", pendingMessage);
+
+		// Let Obsidian paint the loading state before starting native networking.
+		await yieldToUi();
+
+		try {
+			onSuccess(await run());
+		} catch (error) {
+			const detail = this.errorMessage(error, failureLabel);
+			this.setStatus(
+				statusEl,
+				"error",
+				detail === failureLabel ? `✗ ${failureLabel}` : `✗ ${failureLabel}：${detail}`,
+			);
+		} finally {
+			button.setDisabled(false).setIcon("search").setTooltip(tooltip);
+			button.extraSettingsEl.classList.remove("vpb-check-running");
+			button.extraSettingsEl.removeAttribute("aria-busy");
+		}
 	}
 
 	private readinessText(result: ReadyCheckResult): string {
@@ -269,12 +350,12 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			});
 	}
 
-	private runAction(
+	private async runAction(
 		button: ButtonComponent,
 		label: string,
 		pendingLabel: string,
 		action: () => Promise<unknown>,
-	): void {
+	): Promise<void> {
 		if (this.isActionRunning) {
 			return;
 		}
@@ -282,17 +363,35 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		this.isActionRunning = true;
 		this.actionButtons.forEach((item) => item.setDisabled(true));
 		button.setButtonText(pendingLabel);
+		await yieldToUi();
 
-		void action()
-			.catch((error: unknown) => new Notice(this.errorMessage(error, `${label}失败`)))
-			.finally(() => {
-				this.isActionRunning = false;
-				this.actionButtons.forEach((item) => item.setDisabled(false));
-				button.setButtonText(label);
-			});
+		try {
+			await action();
+		} catch (error) {
+			new Notice(this.errorMessage(error, `${label}失败`));
+		} finally {
+			this.isActionRunning = false;
+			this.actionButtons.forEach((item) => item.setDisabled(false));
+			button.setButtonText(label);
+		}
 	}
 
 	private errorMessage(error: unknown, fallback: string): string {
 		return error instanceof Error && error.message ? error.message : fallback;
 	}
+}
+
+function yieldToUi(): Promise<void> {
+	return new Promise((resolve) => {
+		let resolved = false;
+		const finish = (): void => {
+			if (!resolved) {
+				resolved = true;
+				resolve();
+			}
+		};
+
+		window.requestAnimationFrame(finish);
+		window.setTimeout(finish, 50);
+	});
 }

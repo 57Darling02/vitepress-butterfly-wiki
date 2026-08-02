@@ -1,9 +1,6 @@
-import { requestUrl } from "obsidian";
-
-import { encryptGitHubSecret } from "../utils/secret";
-
 const API_URL = "https://api.github.com";
 const API_VERSION = "2022-11-28";
+const REQUEST_TIMEOUT_MS = 15_000;
 const WORKFLOW_MATCH_TOLERANCE_MS = 5_000;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -80,13 +77,23 @@ export class GitHubApiError extends Error {
   }
 }
 
+export class GitHubRequestTimeoutError extends Error {
+  constructor(
+    readonly timeoutMs: number,
+    readonly url: string,
+  ) {
+    super(`连接 GitHub 超时（${Math.round(timeoutMs / 1000)} 秒），请检查网络或代理后重试。`);
+    this.name = "GitHubRequestTimeoutError";
+  }
+}
+
 export class WorkflowRunTimeoutError extends Error {
   constructor(
     readonly workflow: string | number,
     readonly timeoutMs: number,
     readonly lastRun?: WorkflowRun,
   ) {
-    super(`Timed out waiting for workflow ${workflow} after ${timeoutMs}ms.`);
+    super(`等待工作流 ${workflow} 超时（${Math.round(timeoutMs / 1000)} 秒）。`);
     this.name = "WorkflowRunTimeoutError";
   }
 }
@@ -136,6 +143,7 @@ interface RequestOptions {
 
 export class GitHubClient {
   private readonly token: string;
+  private authenticatedUser?: Promise<GitHubUser>;
 
   constructor(token: string) {
     this.token = token.trim();
@@ -145,7 +153,12 @@ export class GitHubClient {
     }
   }
 
-  async getAuthenticatedUser(): Promise<GitHubUser> {
+  getAuthenticatedUser(): Promise<GitHubUser> {
+    this.authenticatedUser ??= this.loadAuthenticatedUser();
+    return this.authenticatedUser;
+  }
+
+  private async loadAuthenticatedUser(): Promise<GitHubUser> {
     const user = await this.request<GitHubUserResponse>("/user");
 
     return {
@@ -221,6 +234,7 @@ export class GitHubClient {
 
   async setActionsSecret(repository: RepoRef, name: string, value: string): Promise<void> {
     const key = await this.getActionsSecretPublicKey(repository);
+    const { encryptGitHubSecret } = await import("../utils/secret");
     const encryptedValue = await encryptGitHubSecret(value, key.key);
 
     await this.request<void>(
@@ -336,32 +350,58 @@ export class GitHubClient {
 
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const url = this.url(path, options.query);
-    const response = await requestUrl({
-      url,
-      method: options.method ?? "GET",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${this.token}`,
-        "X-GitHub-Api-Version": API_VERSION,
-      },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      throw: false,
-    });
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
 
-    if (response.status < 200 || response.status >= 300) {
-      throw new GitHubApiError(
-        apiMessage(response.text, response.status),
-        response.status,
-        url,
-      );
+    try {
+      const response = await fetch(url, {
+        method: options.method ?? "GET",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${this.token}`,
+          "Content-Type": "application/json",
+          "X-GitHub-Api-Version": API_VERSION,
+        },
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: controller.signal,
+      });
+      const text = await response.text();
+
+      if (!response.ok) {
+        throw new GitHubApiError(
+          apiMessage(text, response.status),
+          response.status,
+          url,
+        );
+      }
+
+      // 204 No Content (e.g. workflow dispatches, secret deletion) has no body.
+      if (response.status === 204 || text.length === 0) {
+        return undefined as T;
+      }
+
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        throw new GitHubApiError("GitHub 返回了无法解析的响应。", response.status, url);
+      }
+    } catch (error) {
+      if (error instanceof GitHubApiError) {
+        throw error;
+      }
+      if (timedOut || isAbortError(error)) {
+        throw new GitHubRequestTimeoutError(REQUEST_TIMEOUT_MS, url);
+      }
+      const networkError = new Error("无法连接 GitHub，请检查网络、代理或 DNS 设置后重试。");
+      (networkError as Error & { cause?: unknown }).cause = error;
+      throw networkError;
+    } finally {
+      window.clearTimeout(timeout);
     }
-
-    // 204 No Content (e.g. workflow dispatches, secret deletion) has no body.
-    if (response.status === 204 || response.text.length === 0) {
-      return undefined as T;
-    }
-
-    return response.json as T;
   }
 
   private url(path: string, query?: Readonly<Record<string, QueryValue>>): string {
@@ -423,7 +463,21 @@ function wait(durationMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 function apiMessage(body: string, status: number): string {
+  if (status === 401) {
+    return "PAT 无效、已过期或权限不足。";
+  }
+  if (status === 403) {
+    return "GitHub 拒绝访问，请检查 PAT 权限或 API 限额。";
+  }
+  if (status === 404) {
+    return "GitHub 资源不存在或当前 PAT 无权访问。";
+  }
+
   try {
     const payload = JSON.parse(body);
     if (
@@ -432,11 +486,11 @@ function apiMessage(body: string, status: number): string {
       && "message" in payload
       && typeof payload.message === "string"
     ) {
-      return payload.message;
+      return `GitHub 请求失败：${payload.message}`;
     }
   } catch {
     // Non-JSON error body; fall through to the generic message.
   }
 
-  return `GitHub API request failed with status ${status}.`;
+  return `GitHub 请求失败（HTTP ${status}）。`;
 }
