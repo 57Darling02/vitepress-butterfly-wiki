@@ -1,0 +1,10 @@
+# Obsidian 个人状态（每台设备不同，不入库）
+.obsidian/workspace.json
+.obsidian/cache
+.obsidian/plugins/obsidian-git/data.json
+.trash/
+
+# 系统与编辑器噪音
+.DS_Store
+Thumbs.db
+*.log

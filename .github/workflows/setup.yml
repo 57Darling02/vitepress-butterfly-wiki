@@ -1,0 +1,155 @@
+name: Setup Blog
+
+on:
+  workflow_dispatch:
+    inputs:
+      blog_repo_name:
+        description: "Public blog repo name (suggested: <your-username>.github.io)"
+        required: true
+        default: "my-blog"
+      pat:
+        description: "GitHub Personal Access Token with repo + workflow scopes. It will be written into both repositories' secrets."
+        required: true
+      theme_repo:
+        description: "Theme source repository to fork"
+        required: false
+        default: "57Darling02/VitePress_butterfly"
+      configure_pages:
+        description: "Enable GitHub Pages (Source: GitHub Actions) on the blog repo"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Create blog repo and wire everything up
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout content repository
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        env:
+          PAT: ${{ github.event.inputs.pat }}
+          BLOG_REPO_NAME: ${{ github.event.inputs.blog_repo_name }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$PAT" ]; then
+            echo "::error::PAT is required. Generate one with repo and workflow scopes."
+            exit 1
+          fi
+
+          if [[ ! "$BLOG_REPO_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::blog_repo_name can only contain letters, numbers, dot, underscore, and hyphen."
+            exit 1
+          fi
+
+      - name: Fork theme repository
+        id: fork
+        env:
+          GH_TOKEN: ${{ github.event.inputs.pat }}
+          OWNER: ${{ github.repository_owner }}
+          BLOG_REPO_NAME: ${{ github.event.inputs.blog_repo_name }}
+          THEME_REPO: ${{ github.event.inputs.theme_repo }}
+          WIKI_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          BLOG_REPO="$OWNER/$BLOG_REPO_NAME"
+          echo "blog_repo=$BLOG_REPO" >> "$GITHUB_OUTPUT"
+          echo "wiki_repo=$WIKI_REPO" >> "$GITHUB_OUTPUT"
+          echo "wiki_url=https://github.com/$WIKI_REPO.git" >> "$GITHUB_OUTPUT"
+
+          if gh repo view "$BLOG_REPO" >/dev/null 2>&1; then
+            PARENT="$(gh repo view "$BLOG_REPO" --json parent -q '.parent.full_name // ""' 2>/dev/null || true)"
+            if [ "$PARENT" != "$THEME_REPO" ]; then
+              echo "::error::$BLOG_REPO already exists (parent: ${PARENT:-none}); it is not a fork of $THEME_REPO. Choose a different blog_repo_name."
+              exit 1
+            fi
+            echo "::warning::$BLOG_REPO already exists and is a fork of $THEME_REPO. Reusing it."
+          else
+            echo "Forking $THEME_REPO as $BLOG_REPO ..."
+            gh repo fork "$THEME_REPO" --fork-name "$BLOG_REPO_NAME" --default-branch-only
+          fi
+
+      - name: Enable Actions on the blog repo
+        env:
+          GH_TOKEN: ${{ github.event.inputs.pat }}
+          BLOG_REPO: ${{ steps.fork.outputs.blog_repo }}
+        run: |
+          set -euo pipefail
+
+          gh api --method PUT "repos/$BLOG_REPO/actions/permissions" \
+            -f enabled=true -f allowed_actions=all
+
+          # The fork inherits the theme's legacy setup workflow; it is not needed here.
+          gh api --method PUT "repos/$BLOG_REPO/actions/workflows/setup-blog.yml/disable" || \
+            echo "::warning::Could not disable the legacy setup workflow in the blog repo."
+
+      - name: Configure repository secrets
+        env:
+          GH_TOKEN: ${{ github.event.inputs.pat }}
+          PAT: ${{ github.event.inputs.pat }}
+          BLOG_REPO: ${{ steps.fork.outputs.blog_repo }}
+          WIKI_REPO: ${{ steps.fork.outputs.wiki_repo }}
+          WIKI_URL: ${{ steps.fork.outputs.wiki_url }}
+        run: |
+          set -euo pipefail
+
+          # Blog repo: how to fetch the private content repo at build time.
+          printf "%s" "$WIKI_URL" | gh secret set WIKI_URL -R "$BLOG_REPO"
+          printf "%s" "$PAT" | gh secret set PAT -R "$BLOG_REPO"
+
+          # Content repo: where to notify after a push.
+          printf "%s" "$BLOG_REPO" | gh secret set BLOG_REPO -R "$WIKI_REPO"
+          printf "%s" "$PAT" | gh secret set PAT -R "$WIKI_REPO"
+
+      - name: Configure GitHub Pages
+        if: ${{ github.event.inputs.configure_pages == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.event.inputs.pat }}
+          BLOG_REPO: ${{ steps.fork.outputs.blog_repo }}
+        run: |
+          set +e
+          gh api "repos/$BLOG_REPO/pages" >/dev/null 2>&1
+          PAGES_EXISTS=$?
+          set -e
+
+          if [ "$PAGES_EXISTS" -eq 0 ]; then
+            gh api --method PUT "repos/$BLOG_REPO/pages" -f build_type=workflow || \
+              echo "::warning::Could not update GitHub Pages automatically. Set Settings -> Pages -> Source to GitHub Actions."
+          else
+            gh api --method POST "repos/$BLOG_REPO/pages" -f build_type=workflow || \
+              echo "::warning::Could not create GitHub Pages automatically. Set Settings -> Pages -> Source to GitHub Actions."
+          fi
+
+      - name: Trigger first build
+        env:
+          GH_TOKEN: ${{ github.event.inputs.pat }}
+          BLOG_REPO: ${{ steps.fork.outputs.blog_repo }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/$BLOG_REPO/dispatches" -f event_type=contents-updated
+
+      - name: Summary
+        env:
+          BLOG_REPO: ${{ steps.fork.outputs.blog_repo }}
+          WIKI_REPO: ${{ steps.fork.outputs.wiki_repo }}
+          WIKI_URL: ${{ steps.fork.outputs.wiki_url }}
+        run: |
+          cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+          ## Setup complete
+
+          Content repository (private): ${{ steps.fork.outputs.wiki_repo }}
+          Blog repository (public): ${{ steps.fork.outputs.blog_repo }}
+          WIKI_URL: \`${{ steps.fork.outputs.wiki_url }}\`
+
+          Next:
+          1. Watch the \`Deploy Site\` workflow in the blog repository.
+          2. Check \`Settings -> Pages\` for the site URL.
+          3. Clone the content repository and start writing articles.
+          EOF

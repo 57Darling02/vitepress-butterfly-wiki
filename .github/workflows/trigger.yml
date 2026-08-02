@@ -1,0 +1,17 @@
+# Place this workflow in your content/wiki repository (not the blog repo).
+name: Trigger Blog Rebuild
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch event to blog repo
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PAT }} # PAT stored in the content/wiki repo
+          repository: ${{ secrets.BLOG_REPO }} # e.g. 57Darling02/57Darling02.github.io
+          event-type: contents-updated
