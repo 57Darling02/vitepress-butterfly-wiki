@@ -3050,7 +3050,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     containerEl.createEl("h3", { text: "1. \u8FDE\u63A5 GitHub" });
     const setting = new import_obsidian.Setting(containerEl).setName("GitHub PAT").setDesc("\u4F7F\u7528\u5177\u6709 repo + workflow \u6743\u9650\u7684 Tokens (classic)\uFF1B\u4EC5\u4FDD\u5B58\u5728\u672C\u673A\u548C GitHub \u52A0\u5BC6 secrets \u4E2D\u3002");
     const status = this.createStatus(setting.descEl);
-    this.setStatus(status, "warn", "\u672A\u68C0\u6D4B");
+    this.setStatus(status, "neutral", "\u672A\u68C0\u6D4B");
     if (this.isPatVerified()) {
       this.setStatus(status, "ok", `\u2713 \u5DF2\u8FDE\u63A5 @${this.verifiedLogin}`);
     }
@@ -3069,6 +3069,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
         if (normalized !== this.verifiedPat) {
           this.verifiedPat = "";
           this.verifiedLogin = "";
+          this.patButton?.setButtonText("\u68C0\u6D4B\u8FDE\u901A\u6027");
           this.setStatus(
             status,
             normalized ? "warn" : "error",
@@ -3079,7 +3080,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       });
     }).addButton((button) => {
       this.patButton = button;
-      button.setButtonText("\u68C0\u6D4B\u8FDE\u901A\u6027").setCta();
+      button.setButtonText(this.isPatVerified() ? "\u91CD\u65B0\u68C0\u6D4B" : "\u68C0\u6D4B\u8FDE\u901A\u6027").setCta();
       button.onClick(() => {
         void this.runPatCheck(button, status);
       });
@@ -3093,7 +3094,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.repositorySection = containerEl.createDiv({ cls: "vpb-repository-section" });
     this.repositorySection.createEl("h3", { text: "2. \u914D\u7F6E\u4ED3\u5E93" });
     if (!this.isPatVerified()) {
-      this.repositorySection.createEl("p", {
+      this.sectionHint = this.repositorySection.createEl("p", {
         cls: "vitepress-butterfly-publisher-hint",
         text: "\u{1F512} PAT \u8FDE\u901A\u6027\u68C0\u6D4B\u901A\u8FC7\u540E\u5373\u53EF\u68C0\u6D4B\u548C\u914D\u7F6E\u4ED3\u5E93\u3002"
       });
@@ -3115,10 +3116,11 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.articleStatus = status;
     this.setStatus(
       status,
-      this.namesReady() ? "warn" : "error",
+      this.namesReady() ? "neutral" : "error",
       this.namesReady() ? "\u672A\u68C0\u6D4B" : "\u8BF7\u5148\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\u548C\u535A\u5BA2\u4ED3\u5E93\u540D"
     );
     setting.addText((text) => {
+      this.articleInput = text;
       this.repositoryInputs.push(text);
       text.setPlaceholder("my-blog-wiki");
       text.setValue(this.getSettings().repoName);
@@ -3163,10 +3165,11 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.blogStatus = status;
     this.setStatus(
       status,
-      this.namesReady() ? "warn" : "error",
+      this.namesReady() ? "neutral" : "error",
       this.namesReady() ? "\u672A\u68C0\u6D4B" : "\u8BF7\u5148\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\u548C\u535A\u5BA2\u4ED3\u5E93\u540D"
     );
     setting.addText((text) => {
+      this.blogInput = text;
       this.repositoryInputs.push(text);
       text.setPlaceholder("yourname.github.io");
       text.setValue(this.getSettings().blogRepoName);
@@ -3355,6 +3358,8 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       if (this.getSettings().pat.trim() !== patAtStart) {
         throw new Error("PAT \u5DF2\u5728\u68C0\u6D4B\u8FC7\u7A0B\u4E2D\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u68C0\u6D4B\u3002");
       }
+      this.verifiedPat = patAtStart;
+      this.verifiedLogin = result.login;
       const changes = {};
       const settings = this.getSettings();
       if (!settings.repoName.trim()) {
@@ -3365,10 +3370,14 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       }
       if (Object.keys(changes).length > 0) {
         await this.saveSettings(changes);
+        this.articleInput?.setValue(this.getSettings().repoName);
+        this.blogInput?.setValue(this.getSettings().blogRepoName);
       }
-      this.verifiedPat = patAtStart;
-      this.verifiedLogin = result.login;
-      this.display();
+      this.patButton?.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
+      this.sectionHint?.remove();
+      this.setStatus(status, "ok", `\u2713 \u5DF2\u8FDE\u63A5 @${result.login}`);
+      this.updateRepoStatusHints();
+      this.updateAvailability();
     } catch (error) {
       this.verifiedPat = "";
       this.verifiedLogin = "";
@@ -3376,8 +3385,10 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     } finally {
       this.isPatChecking = false;
       if (this.patButton) {
-        this.patButton.setButtonText("\u68C0\u6D4B\u8FDE\u901A\u6027");
         this.setButtonLoading(this.patButton, false);
+        if (!this.isPatVerified()) {
+          this.patButton.setButtonText("\u68C0\u6D4B\u8FDE\u901A\u6027");
+        }
       }
       this.updateAvailability();
     }
@@ -3405,6 +3416,18 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
   // ------------------------------------------------------------------
   // Shared UI helpers
   // ------------------------------------------------------------------
+  updateRepoStatusHints() {
+    if (!this.articleStatus || !this.blogStatus) {
+      return;
+    }
+    if (this.namesReady()) {
+      this.setStatus(this.articleStatus, "neutral", "\u672A\u68C0\u6D4B");
+      this.setStatus(this.blogStatus, "neutral", "\u672A\u68C0\u6D4B");
+    } else {
+      this.setStatus(this.articleStatus, "error", "\u8BF7\u5148\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\u548C\u535A\u5BA2\u4ED3\u5E93\u540D");
+      this.setStatus(this.blogStatus, "error", "\u8BF7\u5148\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\u548C\u535A\u5BA2\u4ED3\u5E93\u540D");
+    }
+  }
   updateAvailability() {
     const enabled = this.isPatVerified() && !this.isPatChecking && !this.isActionRunning;
     this.repositoryInputs.forEach((input) => input.setDisabled(!enabled));
@@ -3449,7 +3472,9 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
   setStatus(el, kind, message) {
     el.textContent = message;
     el.removeClass("vpb-loading", "vpb-ok", "vpb-warn", "vpb-error");
-    el.addClass(`vpb-${kind}`);
+    if (kind !== "neutral") {
+      el.addClass(`vpb-${kind}`);
+    }
   }
   fullName(result) {
     return `${result.repository.owner}/${result.repository.name}`;

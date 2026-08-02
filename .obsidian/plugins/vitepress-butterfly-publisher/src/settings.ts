@@ -61,6 +61,9 @@ export class PublisherSettingsTab extends PluginSettingTab {
 	private patButton?: ButtonComponent;
 	private patInput?: TextComponent;
 	private repositorySection?: HTMLElement;
+	private sectionHint?: HTMLElement;
+	private articleInput?: TextComponent;
+	private blogInput?: TextComponent;
 	private articleStatus?: HTMLSpanElement;
 	private blogStatus?: HTMLSpanElement;
 	private articleCheckButton?: ButtonComponent;
@@ -116,7 +119,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			.setName("GitHub PAT")
 			.setDesc("使用具有 repo + workflow 权限的 Tokens (classic)；仅保存在本机和 GitHub 加密 secrets 中。");
 		const status = this.createStatus(setting.descEl);
-		this.setStatus(status, "warn", "未检测");
+		this.setStatus(status, "neutral", "未检测");
 
 		if (this.isPatVerified()) {
 			this.setStatus(status, "ok", `✓ 已连接 @${this.verifiedLogin}`);
@@ -138,6 +141,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					if (normalized !== this.verifiedPat) {
 						this.verifiedPat = "";
 						this.verifiedLogin = "";
+						this.patButton?.setButtonText("检测连通性");
 						this.setStatus(
 							status,
 							normalized ? "warn" : "error",
@@ -149,7 +153,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			})
 			.addButton((button) => {
 				this.patButton = button;
-				button.setButtonText("检测连通性").setCta();
+				button.setButtonText(this.isPatVerified() ? "重新检测" : "检测连通性").setCta();
 				button.onClick(() => {
 					void this.runPatCheck(button, status);
 				});
@@ -167,12 +171,11 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		// The UI explains itself once the PAT is verified: the only visible
 		// button is「检测仓库」until a check result branches the options.
 		if (!this.isPatVerified()) {
-			this.repositorySection.createEl("p", {
+			this.sectionHint = this.repositorySection.createEl("p", {
 				cls: "vitepress-butterfly-publisher-hint",
 				text: "🔒 PAT 连通性检测通过后即可检测和配置仓库。",
 			});
 		}
-
 		this.renderArticleSection(this.repositorySection);
 		this.renderBlogSection(this.repositorySection);
 
@@ -197,11 +200,12 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		this.articleStatus = status;
 		this.setStatus(
 			status,
-			this.namesReady() ? "warn" : "error",
+			this.namesReady() ? "neutral" : "error",
 			this.namesReady() ? "未检测" : "请先填写文章仓库名和博客仓库名",
 		);
 
 		setting.addText((text) => {
+			this.articleInput = text;
 			this.repositoryInputs.push(text);
 			text.setPlaceholder("my-blog-wiki");
 			text.setValue(this.getSettings().repoName);
@@ -253,11 +257,12 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		this.blogStatus = status;
 		this.setStatus(
 			status,
-			this.namesReady() ? "warn" : "error",
+			this.namesReady() ? "neutral" : "error",
 			this.namesReady() ? "未检测" : "请先填写文章仓库名和博客仓库名",
 		);
 
 		setting.addText((text) => {
+			this.blogInput = text;
 			this.repositoryInputs.push(text);
 			text.setPlaceholder("yourname.github.io");
 			text.setValue(this.getSettings().blogRepoName);
@@ -490,6 +495,11 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				throw new Error("PAT 已在检测过程中修改，请重新检测。");
 			}
 
+			this.verifiedPat = patAtStart;
+			this.verifiedLogin = result.login;
+
+			// Auto-fill empty repository names and surface the change in the
+			// input fields, without rebuilding the whole settings page.
 			const changes: Partial<PluginSettings> = {};
 			const settings = this.getSettings();
 			if (!settings.repoName.trim()) {
@@ -500,11 +510,15 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			}
 			if (Object.keys(changes).length > 0) {
 				await this.saveSettings(changes);
+				this.articleInput?.setValue(this.getSettings().repoName);
+				this.blogInput?.setValue(this.getSettings().blogRepoName);
 			}
 
-			this.verifiedPat = patAtStart;
-			this.verifiedLogin = result.login;
-			this.display();
+			this.patButton?.setButtonText("重新检测");
+			this.sectionHint?.remove();
+			this.setStatus(status, "ok", `✓ 已连接 @${result.login}`);
+			this.updateRepoStatusHints();
+			this.updateAvailability();
 		} catch (error) {
 			this.verifiedPat = "";
 			this.verifiedLogin = "";
@@ -512,8 +526,10 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		} finally {
 			this.isPatChecking = false;
 			if (this.patButton) {
-				this.patButton.setButtonText("检测连通性");
 				this.setButtonLoading(this.patButton, false);
+				if (!this.isPatVerified()) {
+					this.patButton.setButtonText("检测连通性");
+				}
 			}
 			this.updateAvailability();
 		}
@@ -548,6 +564,19 @@ export class PublisherSettingsTab extends PluginSettingTab {
 	// ------------------------------------------------------------------
 	// Shared UI helpers
 	// ------------------------------------------------------------------
+
+	private updateRepoStatusHints(): void {
+		if (!this.articleStatus || !this.blogStatus) {
+			return;
+		}
+		if (this.namesReady()) {
+			this.setStatus(this.articleStatus, "neutral", "未检测");
+			this.setStatus(this.blogStatus, "neutral", "未检测");
+		} else {
+			this.setStatus(this.articleStatus, "error", "请先填写文章仓库名和博客仓库名");
+			this.setStatus(this.blogStatus, "error", "请先填写文章仓库名和博客仓库名");
+		}
+	}
 
 	private updateAvailability(): void {
 		const enabled = this.isPatVerified() && !this.isPatChecking && !this.isActionRunning;
@@ -597,12 +626,14 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 	private setStatus(
 		el: HTMLSpanElement,
-		kind: "loading" | "ok" | "warn" | "error",
+		kind: "neutral" | "loading" | "ok" | "warn" | "error",
 		message: string,
 	): void {
 		el.textContent = message;
 		el.removeClass("vpb-loading", "vpb-ok", "vpb-warn", "vpb-error");
-		el.addClass(`vpb-${kind}`);
+		if (kind !== "neutral") {
+			el.addClass(`vpb-${kind}`);
+		}
 	}
 
 	private fullName(result: RepositoryConfigurationResult): string {
