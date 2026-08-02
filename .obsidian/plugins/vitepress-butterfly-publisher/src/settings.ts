@@ -164,13 +164,14 @@ export class PublisherSettingsTab extends PluginSettingTab {
 	private renderRepositories(containerEl: HTMLElement): void {
 		this.repositorySection = containerEl.createDiv({ cls: "vpb-repository-section" });
 		this.repositorySection.createEl("h3", { text: "2. 配置仓库" });
-		const hint = this.repositorySection.createEl("p", {
-			cls: "vitepress-butterfly-publisher-hint",
-			text: this.isPatVerified()
-				? "先点「检测仓库」确认状态：不存在 → 创建并配置；已存在 → 仅更新环境变量，不改仓库内容。"
-				: "🔒 PAT 连通性检测通过后即可检测和配置仓库。",
-		});
-		hint.setAttribute("aria-live", "polite");
+		// The UI explains itself once the PAT is verified: the only visible
+		// button is「检测仓库」until a check result branches the options.
+		if (!this.isPatVerified()) {
+			this.repositorySection.createEl("p", {
+				cls: "vitepress-butterfly-publisher-hint",
+				text: "🔒 PAT 连通性检测通过后即可检测和配置仓库。",
+			});
+		}
 
 		this.renderArticleSection(this.repositorySection);
 		this.renderBlogSection(this.repositorySection);
@@ -238,7 +239,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					void this.runRepoAction("article", "create");
 				}
 			});
-			button.buttonEl.hidden = true;
+			this.setButtonVisible(button, false);
 		});
 
 		this.updateRepoButtons("article");
@@ -293,7 +294,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					void this.runRepoAction("blog", "create");
 				}
 			});
-			button.buttonEl.hidden = true;
+			this.setButtonVisible(button, false);
 		});
 
 		this.updateRepoButtons("blog");
@@ -312,35 +313,41 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			case "checking":
 				check.setButtonText("检测中…");
 				this.setButtonLoading(check, true);
-				action.buttonEl.hidden = true;
+				this.setButtonVisible(action, false);
 				break;
 			case "exists":
 				check.setButtonText("重新检测");
 				this.setButtonLoading(check, false);
 				action.setButtonText("仅配置变量");
 				this.setButtonLoading(action, false);
-				action.buttonEl.hidden = false;
+				this.setButtonVisible(action, true);
 				break;
 			case "missing":
 				check.setButtonText("重新检测");
 				this.setButtonLoading(check, false);
 				action.setButtonText("创建仓库并配置");
 				this.setButtonLoading(action, false);
-				action.buttonEl.hidden = false;
+				this.setButtonVisible(action, true);
 				break;
 			case "working":
 				check.setButtonText("重新检测");
 				this.setButtonLoading(check, false);
 				action.setButtonText("配置中…");
 				this.setButtonLoading(action, true);
-				action.buttonEl.hidden = false;
+				this.setButtonVisible(action, true);
 				break;
 			default:
 				check.setButtonText("检测仓库");
 				this.setButtonLoading(check, false);
-				action.buttonEl.hidden = true;
+				this.setButtonVisible(action, false);
 				break;
 		}
+	}
+
+	private setButtonVisible(button: ButtonComponent, visible: boolean): void {
+		// The HTML `hidden` attribute is overridden by Obsidian's button CSS
+		// (display rules), so visibility is controlled via inline style.
+		button.buttonEl.style.display = visible ? "" : "none";
 	}
 
 	private setButtonLoading(button: ButtonComponent, loading: boolean): void {

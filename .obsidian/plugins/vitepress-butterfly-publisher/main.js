@@ -3092,11 +3092,12 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
   renderRepositories(containerEl) {
     this.repositorySection = containerEl.createDiv({ cls: "vpb-repository-section" });
     this.repositorySection.createEl("h3", { text: "2. \u914D\u7F6E\u4ED3\u5E93" });
-    const hint = this.repositorySection.createEl("p", {
-      cls: "vitepress-butterfly-publisher-hint",
-      text: this.isPatVerified() ? "\u5148\u70B9\u300C\u68C0\u6D4B\u4ED3\u5E93\u300D\u786E\u8BA4\u72B6\u6001\uFF1A\u4E0D\u5B58\u5728 \u2192 \u521B\u5EFA\u5E76\u914D\u7F6E\uFF1B\u5DF2\u5B58\u5728 \u2192 \u4EC5\u66F4\u65B0\u73AF\u5883\u53D8\u91CF\uFF0C\u4E0D\u6539\u4ED3\u5E93\u5185\u5BB9\u3002" : "\u{1F512} PAT \u8FDE\u901A\u6027\u68C0\u6D4B\u901A\u8FC7\u540E\u5373\u53EF\u68C0\u6D4B\u548C\u914D\u7F6E\u4ED3\u5E93\u3002"
-    });
-    hint.setAttribute("aria-live", "polite");
+    if (!this.isPatVerified()) {
+      this.repositorySection.createEl("p", {
+        cls: "vitepress-butterfly-publisher-hint",
+        text: "\u{1F512} PAT \u8FDE\u901A\u6027\u68C0\u6D4B\u901A\u8FC7\u540E\u5373\u53EF\u68C0\u6D4B\u548C\u914D\u7F6E\u4ED3\u5E93\u3002"
+      });
+    }
     this.renderArticleSection(this.repositorySection);
     this.renderBlogSection(this.repositorySection);
     this.repositorySection.createEl("h3", { text: "\u65E5\u5E38\u64CD\u4F5C" });
@@ -3152,7 +3153,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
           void this.runRepoAction("article", "create");
         }
       });
-      button.buttonEl.hidden = true;
+      this.setButtonVisible(button, false);
     });
     this.updateRepoButtons("article");
   }
@@ -3200,7 +3201,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
           void this.runRepoAction("blog", "create");
         }
       });
-      button.buttonEl.hidden = true;
+      this.setButtonVisible(button, false);
     });
     this.updateRepoButtons("blog");
   }
@@ -3216,35 +3217,38 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       case "checking":
         check.setButtonText("\u68C0\u6D4B\u4E2D\u2026");
         this.setButtonLoading(check, true);
-        action.buttonEl.hidden = true;
+        this.setButtonVisible(action, false);
         break;
       case "exists":
         check.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
         this.setButtonLoading(check, false);
         action.setButtonText("\u4EC5\u914D\u7F6E\u53D8\u91CF");
         this.setButtonLoading(action, false);
-        action.buttonEl.hidden = false;
+        this.setButtonVisible(action, true);
         break;
       case "missing":
         check.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
         this.setButtonLoading(check, false);
         action.setButtonText("\u521B\u5EFA\u4ED3\u5E93\u5E76\u914D\u7F6E");
         this.setButtonLoading(action, false);
-        action.buttonEl.hidden = false;
+        this.setButtonVisible(action, true);
         break;
       case "working":
         check.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
         this.setButtonLoading(check, false);
         action.setButtonText("\u914D\u7F6E\u4E2D\u2026");
         this.setButtonLoading(action, true);
-        action.buttonEl.hidden = false;
+        this.setButtonVisible(action, true);
         break;
       default:
         check.setButtonText("\u68C0\u6D4B\u4ED3\u5E93");
         this.setButtonLoading(check, false);
-        action.buttonEl.hidden = true;
+        this.setButtonVisible(action, false);
         break;
     }
+  }
+  setButtonVisible(button, visible) {
+    button.buttonEl.style.display = visible ? "" : "none";
   }
   setButtonLoading(button, loading) {
     button.buttonEl.classList.toggle("vpb-check-running", loading);
