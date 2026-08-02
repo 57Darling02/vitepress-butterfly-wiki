@@ -1,6 +1,6 @@
 {
   "name": "vitepress-butterfly-publisher",
-  "version": "0.7.4",
+  "version": "0.8.0",
   "description": "Publish the current Obsidian vault to a VitePress Butterfly blog.",
   "private": true,
   "main": "main.js",

@@ -3150,7 +3150,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       button.setCta();
       button.onClick(() => {
         if (this.article.state === "exists") {
-          void this.runRepoAction("article", "secrets");
+          void this.runRepoAction("article", "overwrite");
         } else if (this.article.state === "missing") {
           void this.runRepoAction("article", "create");
         }
@@ -3225,7 +3225,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       case "exists":
         check.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
         this.setButtonLoading(check, false);
-        action.setButtonText("\u4EC5\u914D\u7F6E\u53D8\u91CF");
+        action.setButtonText(which === "article" ? "\u8986\u76D6\u5E76\u914D\u7F6E" : "\u4EC5\u914D\u7F6E\u53D8\u91CF");
         this.setButtonLoading(action, false);
         this.setButtonVisible(action, true);
         break;
@@ -3285,7 +3285,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       this.setStatus(
         status,
         "ok",
-        result.exists ? result.pendingResume ? "\u2713 \u4ED3\u5E93\u5DF2\u5B58\u5728\uFF08\u4E0A\u6B21\u521B\u5EFA\u672A\u5B8C\u6210\uFF0C\u53EF\u70B9\u300C\u521B\u5EFA\u4ED3\u5E93\u5E76\u914D\u7F6E\u300D\u7EE7\u7EED\uFF09" : "\u2713 \u4ED3\u5E93\u5DF2\u5B58\u5728" : "\u2713 \u4ED3\u5E93\u4E0D\u5B58\u5728\uFF0C\u53EF\u4EE5\u521B\u5EFA"
+        result.exists ? result.pendingResume ? "\u2713 \u4ED3\u5E93\u5DF2\u5B58\u5728\uFF08\u4E0A\u6B21\u914D\u7F6E\u672A\u5B8C\u6210\uFF0C\u53EF\u4EE5\u7EE7\u7EED\u914D\u7F6E\uFF09" : "\u2713 \u4ED3\u5E93\u5DF2\u5B58\u5728" : "\u2713 \u4ED3\u5E93\u4E0D\u5B58\u5728\uFF0C\u53EF\u4EE5\u521B\u5EFA"
       );
     } catch (error) {
       area.state = "idle";
@@ -3304,13 +3304,14 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     if (!status) {
       return;
     }
+    this.isActionRunning = true;
     area.state = "working";
     this.updateRepoButtons(which);
     this.setStatus(status, "loading", "\u6B63\u5728\u914D\u7F6E\u2026\uFF08\u7F51\u7EDC\u4E2D\u65AD\u53EF\u76F4\u63A5\u91CD\u8BD5\uFF09");
     this.updateAvailability();
     await yieldToUi();
     try {
-      const result = which === "article" ? mode === "secrets" ? await this.actions.onConfigureArticleSecretsOnly() : await this.actions.onCreateArticleRepository() : mode === "secrets" ? await this.actions.onConfigureBlogSecretsOnly() : await this.actions.onCreateBlogRepository();
+      const result = which === "article" ? mode === "overwrite" ? await this.actions.onConfigureArticleRepository() : await this.actions.onCreateArticleRepository() : mode === "secrets" ? await this.actions.onConfigureBlogSecretsOnly() : await this.actions.onCreateBlogRepository();
       area.check = {
         exists: true,
         repository: result.repository,
@@ -3321,7 +3322,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       this.setStatus(
         status,
         "ok",
-        mode === "secrets" ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : result.created ? `\u2713 \u5DF2\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u914D\u7F6E`
+        mode === "overwrite" ? `\u2713 \u5DF2\u8986\u76D6\u5E76\u914D\u7F6E ${this.fullName(result)}` : mode === "secrets" ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : result.created ? `\u2713 \u5DF2\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u914D\u7F6E`
       );
       if (result.warning) {
         new import_obsidian.Notice(result.warning, 8e3);
@@ -3331,6 +3332,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       area.state = area.check?.exists ? "exists" : area.check ? "missing" : "idle";
       this.setStatus(status, "error", `\u2717 ${this.errorMessage(error, "\u914D\u7F6E\u5931\u8D25")}`);
     } finally {
+      this.isActionRunning = false;
       this.updateRepoButtons(which);
       this.updateAvailability();
     }
@@ -3548,6 +3550,26 @@ var GitHubClient = class {
     const result = await this.request(this.repositoryPath(repository));
     return this.toRepository(result);
   }
+  /** Force-updates an existing branch or creates it when the repository is empty. */
+  async forceUpdateBranch(repository, branch, sha) {
+    try {
+      await this.request(this.branchRefsPath(repository, branch), {
+        method: "PATCH",
+        body: { sha, force: true }
+      });
+    } catch (error) {
+      if (!(error instanceof GitHubApiError && error.status === 404)) {
+        throw error;
+      }
+      await this.request(`${this.repositoryPath(repository)}/git/refs`, {
+        method: "POST",
+        body: { ref: `refs/heads/${branch}`, sha }
+      });
+    }
+  }
+  async deleteBranch(repository, branch) {
+    await this.request(this.branchRefsPath(repository, branch), { method: "DELETE" });
+  }
   async createRepository(options) {
     const result = await this.request("/user/repos", {
       method: "POST",
@@ -3627,6 +3649,9 @@ var GitHubClient = class {
       throw new Error("GitHub \u4ED3\u5E93\u5FC5\u987B\u5305\u542B\u7528\u6237\u540D\u548C\u4ED3\u5E93\u540D\u3002");
     }
     return `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+  }
+  branchRefsPath(repository, branch) {
+    return `${this.repositoryPath(repository)}/git/refs/heads/${encodeURIComponent(branch)}`;
   }
   async request(path, options = {}) {
     const url = this.url(path, options.query);
@@ -3788,42 +3813,31 @@ var BlogService = class {
   // ------------------------------------------------------------------
   // Article repository.
   // ------------------------------------------------------------------
-  /** Existing article repository: update BLOG_REPO and PAT only. */
-  async configureArticleSecretsOnly() {
-    const settings = this.requireVerifiedRepositoryNames("\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93");
-    const client = this.client();
-    const user = await client.getAuthenticatedUser();
-    const article = { owner: user.login, name: validateRepoName(settings.repoName, "\u6587\u7AE0\u4ED3\u5E93") };
-    const blogName = validateRepoName(settings.blogRepoName, "\u535A\u5BA2\u4ED3\u5E93");
-    await this.writeArticleSecrets(client, article, user.login, blogName, settings.pat);
-    if (settings.pendingArticleRepo) {
-      await this.deps.saveSettings({ pendingArticleRepo: "" });
-    }
-    return { repository: article, created: false, initialized: false };
+  /** Existing article repository: overwrite its main branch and configure it. */
+  async configureArticleRepository() {
+    return this.syncArticleRepository();
+  }
+  /** Creates or force-syncs the article repository from the current Vault. */
+  async createArticleRepository() {
+    return this.syncArticleRepository();
   }
   /**
-   * Missing article repository: prepare the local Git repository first
-   * (so local problems never leave an empty remote), create a private empty
-   * repository, write secrets, then upload. A previous interrupted creation
-   * is resumed instead of duplicated.
+   * Prepares the local Git repository, writes secrets, then uploads or
+   * force-syncs the current Vault to the target branch.
    */
-  async createArticleRepository() {
-    const settings = this.requireVerifiedRepositoryNames("\u521B\u5EFA\u6587\u7AE0\u4ED3\u5E93");
+  async syncArticleRepository() {
+    const settings = this.requireVerifiedRepositoryNames("\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93");
     const client = this.client();
     const user = await client.getAuthenticatedUser();
     const article = { owner: user.login, name: validateRepoName(settings.repoName, "\u6587\u7AE0\u4ED3\u5E93") };
     const blogName = validateRepoName(settings.blogRepoName, "\u535A\u5BA2\u4ED3\u5E93");
     const fullName = repositoryFullName(article);
     const pending = settings.pendingArticleRepo === fullName;
-    let exists = await this.repositoryExists(client, article);
+    const exists = await this.repositoryExists(client, article);
+    const overwrite = exists && !pending;
+    const git = await this.prepareLocalRepository(article, settings.pat);
     let created = false;
-    let git;
-    if (exists && !pending) {
-      throw new Error("\u6587\u7AE0\u4ED3\u5E93\u5DF2\u5B58\u5728\u3002\u8BF7\u91CD\u65B0\u68C0\u6D4B\uFF0C\u5E76\u9009\u62E9\u300C\u4EC5\u914D\u7F6E\u53D8\u91CF\u300D\uFF08\u4E0D\u4F1A\u4FEE\u6539\u4ED3\u5E93\u5185\u5BB9\uFF09\u3002");
-    }
     if (!exists) {
-      await this.assertLocalRepositoryTarget(article);
-      git = await this.prepareLocalRepository(article, settings.pat);
       await this.deps.saveSettings({ pendingArticleRepo: fullName });
       try {
         await client.createRepository({
@@ -3838,22 +3852,14 @@ var BlogService = class {
         }
         created = true;
       }
-      exists = true;
-    } else if (pending) {
-      git = await this.prepareLocalRepository(article, settings.pat);
     }
     await this.writeArticleSecrets(client, article, user.login, blogName, settings.pat);
-    if (created || pending) {
-      if (!git) {
-        git = await this.prepareLocalRepository(article, settings.pat);
-      }
-      await this.pushPreparedLocalRepository(git, article, settings.pat);
-    }
+    await this.pushPreparedLocalRepository(git, article, settings.pat, overwrite);
     await this.deps.saveSettings({ pendingArticleRepo: "" });
     return {
       repository: article,
       created,
-      initialized: created || pending
+      initialized: true
     };
   }
   async writeArticleSecrets(client, article, owner, blogName, pat) {
@@ -3997,12 +4003,16 @@ var BlogService = class {
     }
     return git;
   }
-  async pushPreparedLocalRepository(git, repository, pat) {
+  async pushPreparedLocalRepository(git, repository, pat, force) {
     try {
       await git.manager.setRemote("origin", authenticatedGitHubUrl(repository, pat));
-      await git.manager.updateUpstreamBranch(`origin/${DEFAULT_BRANCH}`);
+      if (force) {
+        await this.forcePushPreparedLocalRepository(git.manager, repository);
+      } else {
+        await git.manager.updateUpstreamBranch(`origin/${DEFAULT_BRANCH}`);
+      }
     } catch (error) {
-      throw new Error(`\u9996\u6B21\u4E0A\u4F20\u4E2D\u65AD\uFF1A${errorMessage(error)}\u3002\u8BF7\u76F4\u63A5\u91CD\u65B0\u70B9\u51FB\u300C\u521B\u5EFA\u4ED3\u5E93\u5E76\u914D\u7F6E\u300D\u3002`);
+      throw new Error(`\u6587\u7AE0\u4ED3\u5E93\u914D\u7F6E\u4E2D\u65AD\uFF1A${errorMessage(error)}\u3002\u8BF7\u76F4\u63A5\u91CD\u65B0\u70B9\u51FB\u914D\u7F6E\u6309\u94AE\u91CD\u8BD5\u3002`);
     }
     try {
       git.plugin.unloadPlugin?.();
@@ -4010,6 +4020,44 @@ var BlogService = class {
     } catch {
       new import_obsidian2.Notice("\u6587\u7AE0\u5DF2\u4E0A\u4F20\uFF1Bobsidian-git \u5237\u65B0\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u542F Obsidian\u3002", 8e3);
     }
+  }
+  /**
+   * Uploads the local commit to a temporary branch, then force-updates main
+   * through the GitHub ref API. This works with both obsidian-git's desktop
+   * and mobile engines without bundling another Git implementation.
+   */
+  async forcePushPreparedLocalRepository(manager, repository) {
+    const localSha = await this.resolveLocalHead(manager);
+    const temporaryBranch = `vpb-sync-${DEFAULT_BRANCH}-${localSha.slice(0, 12)}`;
+    const client = this.client();
+    try {
+      await client.deleteBranch(repository, temporaryBranch).catch((error) => {
+        if (!(error instanceof GitHubApiError && error.status === 404)) {
+          throw error;
+        }
+      });
+      if (manager.git) {
+        await manager.git.push("origin", `main:${temporaryBranch}`);
+      } else {
+        await manager.updateUpstreamBranch(`origin/${temporaryBranch}`);
+      }
+      await client.forceUpdateBranch(repository, DEFAULT_BRANCH, localSha);
+      await manager.setConfig("branch.main.remote", "origin");
+      await manager.setConfig("branch.main.merge", `refs/heads/${DEFAULT_BRANCH}`);
+    } finally {
+      await client.deleteBranch(repository, temporaryBranch).catch(() => void 0);
+    }
+  }
+  async resolveLocalHead(manager) {
+    try {
+      const head = manager.resolveRef ? await manager.resolveRef("HEAD") : manager.git ? await manager.git.revparse(["--verify", "HEAD"]) : "";
+      const normalized = head.trim();
+      if (/^[0-9a-f]{40}$/i.test(normalized)) {
+        return normalized;
+      }
+    } catch {
+    }
+    throw new Error("\u65E0\u6CD5\u8BFB\u53D6\u672C\u5730 Git \u63D0\u4EA4\uFF0C\u8BF7\u91CD\u542F Obsidian \u540E\u91CD\u8BD5\u3002");
   }
   async hasLocalCommit(manager) {
     try {
@@ -4043,18 +4091,6 @@ var BlogService = class {
       throw new Error("\u65E0\u6CD5\u521D\u59CB\u5316 obsidian-git\uFF0C\u8BF7\u91CD\u542F Obsidian \u540E\u91CD\u8BD5\u3002");
     }
     return { plugin, manager };
-  }
-  async assertLocalRepositoryTarget(repository) {
-    const config = await this.deps.app.vault.adapter.read(".git/config").catch(() => null);
-    if (!config) {
-      return;
-    }
-    const remote = parseGitHubRemote(config);
-    if (remote && !sameRepository(remote, repository)) {
-      throw new Error(
-        `\u5F53\u524D Vault \u5DF2\u8FDE\u63A5 ${repositoryFullName(remote)}\uFF0C\u8BF7\u79FB\u9664 GitHub \u4ED3\u5E93\u5E76\u5220\u9664\u672C\u5730 .git \u6587\u4EF6\u3002`
-      );
-    }
   }
   async createdDespiteError(client, repository, error, pending) {
     if (error instanceof GitHubApiError && error.status !== 422) {
@@ -4130,15 +4166,6 @@ function sanitizeRepoName(value, fallback) {
 }
 function repositoryFullName(repository) {
   return `${repository.owner}/${repository.name}`;
-}
-function parseGitHubRemote(config) {
-  const match = config.match(
-    /url\s*=\s*(?:https?:\/\/(?:[^@\s/]+@)?|git:\/\/|git@)(?:www\.)?github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\s*$/m
-  );
-  return match ? { owner: match[1], name: match[2] } : null;
-}
-function sameRepository(left, right) {
-  return left.owner.toLowerCase() === right.owner.toLowerCase() && left.name.toLowerCase() === right.name.toLowerCase();
 }
 function authenticatedGitHubUrl(repository, pat) {
   const owner = encodeURIComponent(repository.owner);
@@ -4240,7 +4267,7 @@ var VitePressButterflyPublisher = class extends import_obsidian4.Plugin {
         onCheckPat: () => this.blog.checkPat(),
         onCheckArticleRepository: () => this.blog.checkArticleRepository(),
         onCheckBlogRepository: () => this.blog.checkBlogRepository(),
-        onConfigureArticleSecretsOnly: () => this.blog.configureArticleSecretsOnly(),
+        onConfigureArticleRepository: () => this.blog.configureArticleRepository(),
         onCreateArticleRepository: () => this.blog.createArticleRepository(),
         onConfigureBlogSecretsOnly: () => this.blog.configureBlogSecretsOnly(),
         onCreateBlogRepository: () => this.blog.createBlogRepository(),

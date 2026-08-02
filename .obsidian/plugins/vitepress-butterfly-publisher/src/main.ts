@@ -29,7 +29,7 @@ export default class VitePressButterflyPublisher extends Plugin {
 				onCheckPat: () => this.blog.checkPat(),
 				onCheckArticleRepository: () => this.blog.checkArticleRepository(),
 				onCheckBlogRepository: () => this.blog.checkBlogRepository(),
-				onConfigureArticleSecretsOnly: () => this.blog.configureArticleSecretsOnly(),
+				onConfigureArticleRepository: () => this.blog.configureArticleRepository(),
 				onCreateArticleRepository: () => this.blog.createArticleRepository(),
 				onConfigureBlogSecretsOnly: () => this.blog.configureBlogSecretsOnly(),
 				onCreateBlogRepository: () => this.blog.createBlogRepository(),

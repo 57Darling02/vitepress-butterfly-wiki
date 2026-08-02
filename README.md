@@ -72,11 +72,11 @@ GitHub → Settings → Developer settings
 1. 点击 **检测仓库**（只读检查，可随时重试）
 2. 按结果选择：
    - **不存在** → 点 **创建仓库并配置**：先在本地初始化 Git 并提交当前 Vault，确认本地准备成功后才创建私密仓库、上传内容并配置 secrets
-   - **已存在** → 点 **仅配置变量**：不上传、不覆盖任何文章，只更新 `BLOG_REPO` 和 `PAT`
+   - **已存在** → 点 **覆盖并配置**：以当前 Vault 为准覆盖文章仓库内容，同时更新 `BLOG_REPO` 和 `PAT`
 
-仓库名一旦修改，检测结果自动作废，需要重新检测。新建文章仓库时，插件会直接复用 obsidian-git 的 Git 引擎，不会打包第二套 Git。上传完成后可直接使用 obsidian-git Commit / Push / Pull。
+仓库名一旦修改，检测结果自动作废，需要重新检测。文章仓库配置会接管目标仓库的 `main` 分支并 force push；插件仍直接复用 obsidian-git 的 Git 引擎。配置完成后，日常 Commit / Push / Pull 仍由 obsidian-git 负责。
 
-> 如果你下载的是 ZIP，却填写了一个已经存在的文章仓库，请选择「仅配置变量」；插件不会把 ZIP 内容推送到已有仓库。
+> 「覆盖并配置」会替换目标文章仓库的 `main` 分支内容，请确认仓库名正确。
 
 #### 第三步：配置博客仓库
 
@@ -85,7 +85,7 @@ GitHub → Settings → Developer settings
 - **不存在** → 点 **创建仓库并配置**：通过 GitHub 的 **Use this template API**，从 `57Darling02/VitePress_butterfly` 一次性创建公开仓库，再配置 secrets、GitHub Pages 和首次构建
 - **已存在** → 点 **仅配置变量**：不修改仓库内容，只更新 `WIKI_URL` 和 `PAT`
 
-已有仓库绝不会被插件重置或覆盖。插件**不提供删除仓库**：如果残留了不想要的仓库，请到 GitHub 网页 `Settings → Danger Zone → Delete this repository` 删除。
+博客仓库已有内容时，插件不会重置或覆盖，只更新 secrets。插件**不提供删除仓库**：如果残留了不想要的仓库，请到 GitHub 网页 `Settings → Danger Zone → Delete this repository` 删除。
 
 ## 为什么这套流程更容易重试
 
@@ -167,11 +167,11 @@ layout: doc
 
 ### 网络中断后要删除仓库重来吗？
 
-不需要。直接重新点击刚才的配置按钮。插件会检测仓库是否已经创建，并继续完成剩余步骤。
+不需要。直接重新点击刚才的配置按钮。文章仓库会继续上传或覆盖当前 `main`，博客仓库会继续完成 secrets、Pages 和构建配置。
 
 ### 已有仓库会被覆盖吗？
 
-不会。已有文章仓库和博客仓库都只更新各自的两个 secrets，不修改内容。
+文章仓库点击「覆盖并配置」后，会以当前 Vault 内容 force push 覆盖 `main`；博客仓库已存在时仍只更新 `WIKI_URL` 和 `PAT`，不会修改内容。
 
 ### 不想要某个仓库了怎么办？
 

@@ -2,7 +2,7 @@ const API_URL = "https://api.github.com";
 const API_VERSION = "2022-11-28";
 const REQUEST_TIMEOUT_MS = 15_000;
 
-type HttpMethod = "GET" | "POST" | "PUT";
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type QueryValue = string | number | boolean | undefined;
 
 export interface RepoRef {
@@ -110,6 +110,28 @@ export class GitHubClient {
     return this.toRepository(result);
   }
 
+  /** Force-updates an existing branch or creates it when the repository is empty. */
+  async forceUpdateBranch(repository: RepoRef, branch: string, sha: string): Promise<void> {
+    try {
+      await this.request<void>(this.branchRefsPath(repository, branch), {
+        method: "PATCH",
+        body: { sha, force: true },
+      });
+    } catch (error) {
+      if (!(error instanceof GitHubApiError && error.status === 404)) {
+        throw error;
+      }
+      await this.request<void>(`${this.repositoryPath(repository)}/git/refs`, {
+        method: "POST",
+        body: { ref: `refs/heads/${branch}`, sha },
+      });
+    }
+  }
+
+  async deleteBranch(repository: RepoRef, branch: string): Promise<void> {
+    await this.request<void>(this.branchRefsPath(repository, branch), { method: "DELETE" });
+  }
+
   async createRepository(options: {
     name: string;
     private: boolean;
@@ -209,6 +231,10 @@ export class GitHubClient {
       throw new Error("GitHub 仓库必须包含用户名和仓库名。");
     }
     return `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+  }
+
+  private branchRefsPath(repository: RepoRef, branch: string): string {
+    return `${this.repositoryPath(repository)}/git/refs/heads/${encodeURIComponent(branch)}`;
   }
 
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {

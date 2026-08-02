@@ -49,6 +49,7 @@ interface ObsidianGitManager {
   /** simple-git instance exposed by obsidian-git on desktop. */
   git?: {
     revparse(options: string[]): Promise<string>;
+    push(remote: string, refspec: string): Promise<unknown>;
   };
 }
 
@@ -70,10 +71,10 @@ interface AppWithPluginRegistry extends App {
 
 /**
  * Each repository has an explicit two-step flow: a read-only check first,
- * then one of two write actions ("configure secrets only" for an existing
- * repository, "create and configure" for a missing one). Existing
- * repositories are never overwritten. Every action is idempotent and can be
- * retried safely after a network interruption.
+ * then a write action. Article repository configuration deliberately takes
+ * ownership of the target branch and force-pushes the current Vault; blog
+ * repository configuration only updates secrets. Every action is idempotent
+ * and can be retried safely after a network interruption.
  */
 export class BlogService {
   private cachedClient?: { pat: string; client: GitHubClient };
@@ -151,29 +152,22 @@ export class BlogService {
   // Article repository.
   // ------------------------------------------------------------------
 
-  /** Existing article repository: update BLOG_REPO and PAT only. */
-  async configureArticleSecretsOnly(): Promise<RepositoryConfigurationResult> {
-    const settings = this.requireVerifiedRepositoryNames("配置文章仓库");
-    const client = this.client();
-    const user = await client.getAuthenticatedUser();
-    const article = { owner: user.login, name: validateRepoName(settings.repoName, "文章仓库") };
-    const blogName = validateRepoName(settings.blogRepoName, "博客仓库");
+  /** Existing article repository: overwrite its main branch and configure it. */
+  async configureArticleRepository(): Promise<RepositoryConfigurationResult> {
+    return this.syncArticleRepository();
+  }
 
-    await this.writeArticleSecrets(client, article, user.login, blogName, settings.pat);
-    if (settings.pendingArticleRepo) {
-      await this.deps.saveSettings({ pendingArticleRepo: "" });
-    }
-    return { repository: article, created: false, initialized: false };
+  /** Creates or force-syncs the article repository from the current Vault. */
+  async createArticleRepository(): Promise<RepositoryConfigurationResult> {
+    return this.syncArticleRepository();
   }
 
   /**
-   * Missing article repository: prepare the local Git repository first
-   * (so local problems never leave an empty remote), create a private empty
-   * repository, write secrets, then upload. A previous interrupted creation
-   * is resumed instead of duplicated.
+   * Prepares the local Git repository, writes secrets, then uploads or
+   * force-syncs the current Vault to the target branch.
    */
-  async createArticleRepository(): Promise<RepositoryConfigurationResult> {
-    const settings = this.requireVerifiedRepositoryNames("创建文章仓库");
+  private async syncArticleRepository(): Promise<RepositoryConfigurationResult> {
+    const settings = this.requireVerifiedRepositoryNames("配置文章仓库");
     const client = this.client();
     const user = await client.getAuthenticatedUser();
     const article = { owner: user.login, name: validateRepoName(settings.repoName, "文章仓库") };
@@ -181,20 +175,12 @@ export class BlogService {
     const fullName = repositoryFullName(article);
     const pending = settings.pendingArticleRepo === fullName;
 
-    let exists = await this.repositoryExists(client, article);
+    const exists = await this.repositoryExists(client, article);
+    const overwrite = exists && !pending;
+    const git = await this.prepareLocalRepository(article, settings.pat);
     let created = false;
-    let git: { plugin: ObsidianGitPlugin; manager: ObsidianGitManager } | undefined;
-
-    if (exists && !pending) {
-      // The check result is stale: the user chose "create" but the
-      // repository already exists. Never silently downgrade to secrets-only.
-      throw new Error("文章仓库已存在。请重新检测，并选择「仅配置变量」（不会修改仓库内容）。");
-    }
 
     if (!exists) {
-      await this.assertLocalRepositoryTarget(article);
-      git = await this.prepareLocalRepository(article, settings.pat);
-
       // Save intent before the request. If GitHub creates the repository but
       // the response is lost, retrying continues the upload instead of
       // mistaking it for a pre-existing repository.
@@ -212,28 +198,18 @@ export class BlogService {
         }
         created = true;
       }
-      exists = true;
-    } else if (pending) {
-      // Previous creation succeeded but the upload was interrupted.
-      git = await this.prepareLocalRepository(article, settings.pat);
     }
 
-    // Write secrets before the first push so trigger.yml sees a complete
+    // Write secrets before the force-push so trigger.yml sees a complete
     // configuration immediately; this avoids one skipped first deployment.
     await this.writeArticleSecrets(client, article, user.login, blogName, settings.pat);
-
-    if (created || pending) {
-      if (!git) {
-        git = await this.prepareLocalRepository(article, settings.pat);
-      }
-      await this.pushPreparedLocalRepository(git, article, settings.pat);
-    }
+    await this.pushPreparedLocalRepository(git, article, settings.pat, overwrite);
     await this.deps.saveSettings({ pendingArticleRepo: "" });
 
     return {
       repository: article,
       created,
-      initialized: created || pending,
+      initialized: true,
     };
   }
 
@@ -419,12 +395,17 @@ export class BlogService {
     git: { plugin: ObsidianGitPlugin; manager: ObsidianGitManager },
     repository: GitHubRepositoryRef,
     pat: string,
+    force: boolean,
   ): Promise<void> {
     try {
       await git.manager.setRemote("origin", authenticatedGitHubUrl(repository, pat));
-      await git.manager.updateUpstreamBranch(`origin/${DEFAULT_BRANCH}`);
+      if (force) {
+        await this.forcePushPreparedLocalRepository(git.manager, repository);
+      } else {
+        await git.manager.updateUpstreamBranch(`origin/${DEFAULT_BRANCH}`);
+      }
     } catch (error) {
-      throw new Error(`首次上传中断：${errorMessage(error)}。请直接重新点击「创建仓库并配置」。`);
+      throw new Error(`文章仓库配置中断：${errorMessage(error)}。请直接重新点击配置按钮重试。`);
     }
 
     // The remote push is already complete. Reload failure should not make the
@@ -435,6 +416,57 @@ export class BlogService {
     } catch {
       new Notice("文章已上传；obsidian-git 刷新失败，请稍后重启 Obsidian。", 8_000);
     }
+  }
+
+  /**
+   * Uploads the local commit to a temporary branch, then force-updates main
+   * through the GitHub ref API. This works with both obsidian-git's desktop
+   * and mobile engines without bundling another Git implementation.
+   */
+  private async forcePushPreparedLocalRepository(
+    manager: ObsidianGitManager,
+    repository: GitHubRepositoryRef,
+  ): Promise<void> {
+    const localSha = await this.resolveLocalHead(manager);
+    const temporaryBranch = `vpb-sync-${DEFAULT_BRANCH}-${localSha.slice(0, 12)}`;
+    const client = this.client();
+
+    try {
+      await client.deleteBranch(repository, temporaryBranch).catch((error: unknown) => {
+        if (!(error instanceof GitHubApiError && error.status === 404)) {
+          throw error;
+        }
+      });
+      if (manager.git) {
+        await manager.git.push("origin", `main:${temporaryBranch}`);
+      } else {
+        await manager.updateUpstreamBranch(`origin/${temporaryBranch}`);
+      }
+      await client.forceUpdateBranch(repository, DEFAULT_BRANCH, localSha);
+      await manager.setConfig("branch.main.remote", "origin");
+      await manager.setConfig("branch.main.merge", `refs/heads/${DEFAULT_BRANCH}`);
+    } finally {
+      // A failed cleanup is harmless: the same commit retry removes this
+      // reserved branch before uploading again.
+      await client.deleteBranch(repository, temporaryBranch).catch(() => undefined);
+    }
+  }
+
+  private async resolveLocalHead(manager: ObsidianGitManager): Promise<string> {
+    try {
+      const head = manager.resolveRef
+        ? await manager.resolveRef("HEAD")
+        : manager.git
+          ? await manager.git.revparse(["--verify", "HEAD"])
+          : "";
+      const normalized = head.trim();
+      if (/^[0-9a-f]{40}$/i.test(normalized)) {
+        return normalized;
+      }
+    } catch {
+      // Fall through to the user-facing error below.
+    }
+    throw new Error("无法读取本地 Git 提交，请重启 Obsidian 后重试。");
   }
 
   private async hasLocalCommit(manager: ObsidianGitManager): Promise<boolean> {
@@ -475,19 +507,6 @@ export class BlogService {
       throw new Error("无法初始化 obsidian-git，请重启 Obsidian 后重试。");
     }
     return { plugin, manager };
-  }
-
-  private async assertLocalRepositoryTarget(repository: GitHubRepositoryRef): Promise<void> {
-    const config = await this.deps.app.vault.adapter.read(".git/config").catch(() => null);
-    if (!config) {
-      return;
-    }
-    const remote = parseGitHubRemote(config);
-    if (remote && !sameRepository(remote, repository)) {
-      throw new Error(
-        `当前 Vault 已连接 ${repositoryFullName(remote)}，请移除 GitHub 仓库并删除本地 .git 文件。`,
-      );
-    }
   }
 
   private async createdDespiteError(
@@ -586,18 +605,6 @@ function sanitizeRepoName(value: string, fallback: string): string {
 
 function repositoryFullName(repository: GitHubRepositoryRef): string {
   return `${repository.owner}/${repository.name}`;
-}
-
-function parseGitHubRemote(config: string): GitHubRepositoryRef | null {
-  const match = config.match(
-    /url\s*=\s*(?:https?:\/\/(?:[^@\s/]+@)?|git:\/\/|git@)(?:www\.)?github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\s*$/m,
-  );
-  return match ? { owner: match[1], name: match[2] } : null;
-}
-
-function sameRepository(left: GitHubRepositoryRef, right: GitHubRepositoryRef): boolean {
-  return left.owner.toLowerCase() === right.owner.toLowerCase()
-    && left.name.toLowerCase() === right.name.toLowerCase();
 }
 
 function authenticatedGitHubUrl(repository: GitHubRepositoryRef, pat: string): string {

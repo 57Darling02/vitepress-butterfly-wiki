@@ -38,7 +38,7 @@ export interface PublisherSettingsActions {
 	onCheckPat(): Promise<PatCheckResult>;
 	onCheckArticleRepository(): Promise<RepoCheckResult>;
 	onCheckBlogRepository(): Promise<RepoCheckResult>;
-	onConfigureArticleSecretsOnly(): Promise<RepositoryConfigurationResult>;
+	onConfigureArticleRepository(): Promise<RepositoryConfigurationResult>;
 	onCreateArticleRepository(): Promise<RepositoryConfigurationResult>;
 	onConfigureBlogSecretsOnly(): Promise<RepositoryConfigurationResult>;
 	onCreateBlogRepository(): Promise<RepositoryConfigurationResult>;
@@ -238,7 +238,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			button.setCta();
 			button.onClick(() => {
 				if (this.article.state === "exists") {
-					void this.runRepoAction("article", "secrets");
+					void this.runRepoAction("article", "overwrite");
 				} else if (this.article.state === "missing") {
 					void this.runRepoAction("article", "create");
 				}
@@ -323,7 +323,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			case "exists":
 				check.setButtonText("重新检测");
 				this.setButtonLoading(check, false);
-				action.setButtonText("仅配置变量");
+				action.setButtonText(which === "article" ? "覆盖并配置" : "仅配置变量");
 				this.setButtonLoading(action, false);
 				this.setButtonVisible(action, true);
 				break;
@@ -395,7 +395,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				"ok",
 				result.exists
 					? result.pendingResume
-						? "✓ 仓库已存在（上次创建未完成，可点「创建仓库并配置」继续）"
+						? "✓ 仓库已存在（上次配置未完成，可以继续配置）"
 						: "✓ 仓库已存在"
 					: "✓ 仓库不存在，可以创建",
 			);
@@ -410,7 +410,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 	private async runRepoAction(
 		which: "article" | "blog",
-		mode: "secrets" | "create",
+		mode: "overwrite" | "secrets" | "create",
 	): Promise<void> {
 		if (this.isPatChecking || this.isActionRunning) {
 			return;
@@ -421,6 +421,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			return;
 		}
 
+		this.isActionRunning = true;
 		area.state = "working";
 		this.updateRepoButtons(which);
 		this.setStatus(status, "loading", "正在配置…（网络中断可直接重试）");
@@ -429,8 +430,8 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		try {
 			const result = which === "article"
-				? mode === "secrets"
-					? await this.actions.onConfigureArticleSecretsOnly()
+				? mode === "overwrite"
+					? await this.actions.onConfigureArticleRepository()
 					: await this.actions.onCreateArticleRepository()
 				: mode === "secrets"
 					? await this.actions.onConfigureBlogSecretsOnly()
@@ -446,8 +447,10 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			this.setStatus(
 				status,
 				"ok",
-				mode === "secrets"
-					? `✓ ${this.fullName(result)} 环境变量已更新`
+				mode === "overwrite"
+					? `✓ 已覆盖并配置 ${this.fullName(result)}`
+					: mode === "secrets"
+						? `✓ ${this.fullName(result)} 环境变量已更新`
 					: result.created
 						? `✓ 已创建并配置 ${this.fullName(result)}`
 						: `✓ 已继续完成 ${this.fullName(result)} 的配置`,
@@ -460,6 +463,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			area.state = area.check?.exists ? "exists" : area.check ? "missing" : "idle";
 			this.setStatus(status, "error", `✗ ${this.errorMessage(error, "配置失败")}`);
 		} finally {
+			this.isActionRunning = false;
 			this.updateRepoButtons(which);
 			this.updateAvailability();
 		}
