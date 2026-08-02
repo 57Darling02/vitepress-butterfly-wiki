@@ -143,7 +143,7 @@ interface RequestOptions {
 
 interface GitTreeEntry {
   path: string;
-  mode: "100644" | "040000";
+  mode: string;
   type: "blob" | "tree";
   sha: string;
 }
@@ -229,34 +229,27 @@ export class GitHubClient {
     }
   }
 
-  /** Creates or overwrites a file on the repository's default branch. */
-  async putFile(
-    repository: RepoRef,
-    path: string,
-    content: string,
-    message: string,
-  ): Promise<void> {
-    const existing = await this.getFileContent(repository, path);
-    const body: { message: string; content: string; sha?: string } = {
-      message,
-      content: base64Encode(new TextEncoder().encode(content)),
-    };
-    if (existing) {
-      body.sha = existing.sha;
-    }
-
-    await this.request<void>(
-      `${this.repositoryPath(repository)}/contents/${encodeURIComponent(path)}`,
-      { method: "PUT", body },
-    );
-  }
-
   async createBlob(repository: RepoRef, data: Uint8Array): Promise<{ sha: string }> {
     return this.request<{ sha: string }>(
       `${this.repositoryPath(repository)}/git/blobs`,
       {
         method: "POST",
         body: { content: base64Encode(data), encoding: "base64" },
+      },
+    );
+  }
+
+  /** Creates a blob from already-encoded content (used when copying repos). */
+  async createBlobRaw(
+    repository: RepoRef,
+    content: string,
+    encoding: string,
+  ): Promise<{ sha: string }> {
+    return this.request<{ sha: string }>(
+      `${this.repositoryPath(repository)}/git/blobs`,
+      {
+        method: "POST",
+        body: { content, encoding },
       },
     );
   }
@@ -368,6 +361,102 @@ export class GitHubClient {
       },
     });
     await this.updateRef(repository, branch, commit.sha);
+  }
+
+  /**
+   * Copies the source repository's default branch into the target
+   * repository, overwriting its default branch with the same file content
+   * (a one-time snapshot — the target does not track the source afterwards).
+   * Implemented purely with the Git Data API, so it works on any device.
+   */
+  async copyRepositoryBranch(
+    from: RepoRef,
+    to: RepoRef,
+    options: {
+      message: string;
+      authorName: string;
+      authorEmail: string;
+    },
+  ): Promise<void> {
+    const fromRepo = await this.getRepository(from);
+    const branch = fromRepo.defaultBranch;
+
+    const headCommit = await this.request<{ tree: { sha: string } }>(
+      `${this.repositoryPath(from)}/git/commits/${encodeURIComponent(branch)}`,
+    );
+    const tree = await this.request<{
+      tree: readonly {
+        path: string;
+        mode: string;
+        type: string;
+        sha: string;
+      }[];
+    }>(`${this.repositoryPath(from)}/git/trees/${headCommit.tree.sha}?recursive=1`);
+
+    // Copy every blob to the target repository.
+    const blobShas = new Map<string, string>();
+    for (const entry of tree.tree) {
+      if (entry.type !== "blob") {
+        continue;
+      }
+      const blob = await this.request<{ content: string; encoding: string }>(
+        `${this.repositoryPath(from)}/git/blobs/${entry.sha}`,
+      );
+      const created = await this.createBlobRaw(to, blob.content, blob.encoding);
+      blobShas.set(entry.sha, created.sha);
+    }
+
+    // Rebuild the directory tree bottom-up.
+    const buildTree = async (dir: string): Promise<string> => {
+      const entries: GitTreeEntry[] = [];
+      const children = new Map<string, string>();
+
+      for (const entry of tree.tree) {
+        if (entry.type !== "blob" || !entry.path.startsWith(dir)) {
+          continue;
+        }
+        const rest = dir ? entry.path.slice(dir.length) : entry.path;
+        const slash = rest.indexOf("/");
+        if (slash === -1) {
+          entries.push({
+            path: rest,
+            mode: entry.mode as GitTreeEntry["mode"],
+            type: "blob",
+            sha: blobShas.get(entry.sha) ?? "",
+          });
+        } else {
+          const name = rest.slice(0, slash);
+          if (!children.has(name)) {
+            children.set(name, dir + name + "/");
+          }
+        }
+      }
+
+      for (const [name, childDir] of children) {
+        entries.push({
+          path: name,
+          mode: "040000",
+          type: "tree",
+          sha: await buildTree(childDir),
+        });
+      }
+
+      return (await this.createTree(to, entries)).sha;
+    };
+
+    const treeSha = await buildTree("");
+    const commit = await this.createCommit(to, {
+      message: options.message,
+      tree: treeSha,
+      author: {
+        name: options.authorName,
+        email: options.authorEmail,
+        date: new Date().toISOString(),
+      },
+    });
+
+    const toRepo = await this.getRepository(to);
+    await this.updateRef(to, toRepo.defaultBranch, commit.sha);
   }
 
   async listSecrets(repository: RepoRef): Promise<string[]> {

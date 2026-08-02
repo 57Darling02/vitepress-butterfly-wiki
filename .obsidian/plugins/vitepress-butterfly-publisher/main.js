@@ -3102,7 +3102,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
         "\u5C31\u7EEA\u68C0\u6D4B\u5931\u8D25"
       );
     });
-    new import_obsidian.Setting(containerEl).setName("\u4E3B\u9898\u4ED3\u5E93").setDesc("\u535A\u5BA2\u4ED3\u5E93\u6BCF\u6B21\u6784\u5EFA\u65F6\u5F3A\u5236\u540C\u6B65\u7684\u4E3B\u9898\u6E90\u4ED3\u5E93\uFF0C\u4E00\u822C\u65E0\u9700\u4FEE\u6539\u3002").addText((text) => {
+    new import_obsidian.Setting(containerEl).setName("\u4E3B\u9898\u4ED3\u5E93").setDesc("\u300C\u90E8\u7F72\u4E3B\u9898\u300D\u65F6\u5FEB\u7167\u5230\u535A\u5BA2\u4ED3\u5E93\u7684\u4E3B\u9898\u6E90\u4ED3\u5E93\uFF08\u4E00\u6B21\u6027\u7684\uFF0C\u4E4B\u540E\u4E0D\u81EA\u52A8\u8DDF\u968F\uFF09\uFF0C\u4E00\u822C\u65E0\u9700\u4FEE\u6539\u3002").addText((text) => {
       text.setPlaceholder("57Darling02/VitePress_butterfly");
       this.bindText(text, "themeRepo", settings.themeRepo, (value) => value.trim());
     });
@@ -3317,27 +3317,22 @@ var GitHubClient = class {
       throw error;
     }
   }
-  /** Creates or overwrites a file on the repository's default branch. */
-  async putFile(repository, path, content, message) {
-    const existing = await this.getFileContent(repository, path);
-    const body = {
-      message,
-      content: base64Encode(new TextEncoder().encode(content))
-    };
-    if (existing) {
-      body.sha = existing.sha;
-    }
-    await this.request(
-      `${this.repositoryPath(repository)}/contents/${encodeURIComponent(path)}`,
-      { method: "PUT", body }
-    );
-  }
   async createBlob(repository, data) {
     return this.request(
       `${this.repositoryPath(repository)}/git/blobs`,
       {
         method: "POST",
         body: { content: base64Encode(data), encoding: "base64" }
+      }
+    );
+  }
+  /** Creates a blob from already-encoded content (used when copying repos). */
+  async createBlobRaw(repository, content, encoding) {
+    return this.request(
+      `${this.repositoryPath(repository)}/git/blobs`,
+      {
+        method: "POST",
+        body: { content, encoding }
       }
     );
   }
@@ -3421,6 +3416,76 @@ var GitHubClient = class {
       }
     });
     await this.updateRef(repository, branch, commit.sha);
+  }
+  /**
+   * Copies the source repository's default branch into the target
+   * repository, overwriting its default branch with the same file content
+   * (a one-time snapshot — the target does not track the source afterwards).
+   * Implemented purely with the Git Data API, so it works on any device.
+   */
+  async copyRepositoryBranch(from, to, options) {
+    const fromRepo = await this.getRepository(from);
+    const branch = fromRepo.defaultBranch;
+    const headCommit = await this.request(
+      `${this.repositoryPath(from)}/git/commits/${encodeURIComponent(branch)}`
+    );
+    const tree = await this.request(`${this.repositoryPath(from)}/git/trees/${headCommit.tree.sha}?recursive=1`);
+    const blobShas = /* @__PURE__ */ new Map();
+    for (const entry of tree.tree) {
+      if (entry.type !== "blob") {
+        continue;
+      }
+      const blob = await this.request(
+        `${this.repositoryPath(from)}/git/blobs/${entry.sha}`
+      );
+      const created = await this.createBlobRaw(to, blob.content, blob.encoding);
+      blobShas.set(entry.sha, created.sha);
+    }
+    const buildTree = async (dir) => {
+      const entries = [];
+      const children = /* @__PURE__ */ new Map();
+      for (const entry of tree.tree) {
+        if (entry.type !== "blob" || !entry.path.startsWith(dir)) {
+          continue;
+        }
+        const rest = dir ? entry.path.slice(dir.length) : entry.path;
+        const slash = rest.indexOf("/");
+        if (slash === -1) {
+          entries.push({
+            path: rest,
+            mode: entry.mode,
+            type: "blob",
+            sha: blobShas.get(entry.sha) ?? ""
+          });
+        } else {
+          const name = rest.slice(0, slash);
+          if (!children.has(name)) {
+            children.set(name, dir + name + "/");
+          }
+        }
+      }
+      for (const [name, childDir] of children) {
+        entries.push({
+          path: name,
+          mode: "040000",
+          type: "tree",
+          sha: await buildTree(childDir)
+        });
+      }
+      return (await this.createTree(to, entries)).sha;
+    };
+    const treeSha = await buildTree("");
+    const commit = await this.createCommit(to, {
+      message: options.message,
+      tree: treeSha,
+      author: {
+        name: options.authorName,
+        email: options.authorEmail,
+        date: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    });
+    const toRepo = await this.getRepository(to);
+    await this.updateRef(to, toRepo.defaultBranch, commit.sha);
   }
   async listSecrets(repository) {
     const result = await this.request(
@@ -3701,81 +3766,6 @@ function apiMessage(body, status) {
 
 // src/services/blog.ts
 var DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
-var BLOG_DEPLOY_WORKFLOW = `name: Deploy Site
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-  repository_dispatch:
-    types: [contents-updated]
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: site-deploy
-  cancel-in-progress: true
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Sync theme source
-        env:
-          THEME_REPO: \${{ secrets.THEME_REPO }}
-        run: |
-          set -euo pipefail
-          THEME_REPO="\${THEME_REPO:-57Darling02/VitePress_butterfly}"
-          cp .github/workflows/deploy.yml /tmp/vpb-deploy.yml
-          git remote add upstream "https://github.com/$THEME_REPO.git"
-          git fetch --depth=1 upstream main
-          git reset --hard upstream/main
-          mkdir -p .github/workflows
-          cp /tmp/vpb-deploy.yml .github/workflows/deploy.yml
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build with VitePress
-        env:
-          WIKI_URL: \${{ secrets.WIKI_URL }}
-          PAT: \${{ secrets.PAT }}
-        run: pnpm docs:build
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .vitepress/dist
-
-  deploy-pages:
-    name: Deploy GitHub Pages
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: \${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-`;
 var BlogService = class {
   constructor(deps) {
     this.deps = deps;
@@ -3822,19 +3812,19 @@ var BlogService = class {
   // Actions.
   // ------------------------------------------------------------------
   /**
-   * Deploys the theme:
+   * Deploys the theme (a one-time snapshot, nothing tracks the theme
+   * afterwards):
    *
    * 1. ensure the content repository exists (private, empty) and overwrite
    *    its default branch with the local vault content (API force push);
-   * 2. ensure the blog repository exists (public, empty) — an existing one
-   *    is reused as-is, its content is irrelevant;
-   * 3. enable Actions, write all secrets and configure Pages;
-   * 4. install the thin deploy workflow on the blog repository — this push
-   *    itself triggers the first build, which force-syncs the theme;
-   * 5. turn the local vault into a full Git working copy (obsidian-git).
+   * 2. ensure the blog repository exists (public) and snapshot the theme
+   *    source into it (existing content is overwritten, so a repository
+   *    that is "wrong" — e.g. another user's old blog — becomes correct);
+   * 3. enable Actions, write the secrets and configure Pages;
+   * 4. trigger the first build of the snapshot.
    *
-   * Rerunning is safe: everything is idempotent, and the local content
-   * always wins on the content repository.
+   * Rerunning is safe: everything is idempotent, the local content always
+   * wins on the content repository, and the theme is re-snapshotted.
    */
   async setup() {
     const { pat, blogRepoName, themeRepo, configurePages } = this.requireSettings("\u90E8\u7F72\u4E3B\u9898");
@@ -3867,16 +3857,22 @@ var BlogService = class {
       new import_obsidian2.Notice(`\u535A\u5BA2\u4ED3\u5E93\u4E0D\u5B58\u5728\uFF0C\u6B63\u5728\u521B\u5EFA ${blog.name} ...`);
       await client.createRepository({ name: blog.name, private: false });
     }
+    const theme = parseRepoRef(themeRepo.trim() || DEFAULT_THEME_REPO);
+    new import_obsidian2.Notice(`\u6B63\u5728\u628A\u4E3B\u9898\u5FEB\u7167\u5199\u5165 ${blog.name} ...`);
+    await client.copyRepositoryBranch(theme, blog, {
+      message: "Deploy theme: snapshot theme source",
+      authorName: user.login,
+      authorEmail: `${user.login}@users.noreply.github.com`
+    });
     await client.enableActions(blog);
     await client.setActionsSecret(blog, "WIKI_URL", `https://github.com/${content.repository.owner}/${content.repository.name}.git`);
     await client.setActionsSecret(blog, "PAT", pat);
-    await client.setActionsSecret(blog, "THEME_REPO", themeRepo.trim() || DEFAULT_THEME_REPO);
     await client.setActionsSecret(content.repository, "BLOG_REPO", `${blog.owner}/${blog.name}`);
     await client.setActionsSecret(content.repository, "PAT", pat);
     if (configurePages) {
       await client.configurePages(blog);
     }
-    await client.putFile(blog, ".github/workflows/deploy.yml", BLOG_DEPLOY_WORKFLOW, "Deploy theme: install deploy workflow");
+    await client.dispatchRepositoryEvent(blog, "contents-updated");
     await this.ensureLocalGit(content.repository, contentBranch, pat);
     new import_obsidian2.Notice(`\u90E8\u7F72\u5B8C\u6210\uFF01\u535A\u5BA2\u4ED3\u5E93\uFF1A${blog.name}\uFF0C\u9996\u6B21\u6784\u5EFA\u5DF2\u89E6\u53D1\u3002`);
   }
@@ -4083,6 +4079,13 @@ function authenticatedGitHubUrl(repository, pat) {
 function sanitizeRepoName(name) {
   const cleaned = name.trim().replace(/[^A-Za-z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
   return cleaned || "my-blog";
+}
+function parseRepoRef(value) {
+  const match = value.trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
+  if (!match) {
+    throw new Error(`\u4E3B\u9898\u4ED3\u5E93\u683C\u5F0F\u5E94\u4E3A owner/repository\uFF1A${value}`);
+  }
+  return { owner: match[1], name: match[2] };
 }
 
 // src/ui/NewArticleModal.ts

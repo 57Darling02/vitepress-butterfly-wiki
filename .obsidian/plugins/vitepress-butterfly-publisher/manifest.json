@@ -1,7 +1,7 @@
 {
   "id": "vitepress-butterfly-publisher",
   "name": "VitePress Butterfly Publisher",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minAppVersion": "1.5.0",
   "description": "内置的初始化与部署助手：创建仓库、配置 secrets、触发 Setup；日常同步请用 obsidian-git。",
   "author": "57Darling02",

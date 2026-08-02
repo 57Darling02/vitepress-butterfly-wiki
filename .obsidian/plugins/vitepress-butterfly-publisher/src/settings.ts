@@ -178,7 +178,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		// --- Advanced ---
 		new Setting(containerEl)
 			.setName("主题仓库")
-			.setDesc("博客仓库每次构建时强制同步的主题源仓库，一般无需修改。")
+			.setDesc("「部署主题」时快照到博客仓库的主题源仓库（一次性的，之后不自动跟随），一般无需修改。")
 			.addText((text) => {
 				text.setPlaceholder("57Darling02/VitePress_butterfly");
 				this.bindText(text, "themeRepo", settings.themeRepo, (value) => value.trim());

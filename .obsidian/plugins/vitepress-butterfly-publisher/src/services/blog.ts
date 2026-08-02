@@ -5,88 +5,7 @@ import type { PluginSettings } from "../settings";
 
 const DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
 
-/**
- * The deploy workflow installed on the blog repository. It is a thin shell:
- * every build first force-syncs the theme source (git reset --hard upstream),
- * so the blog repository never drifts from the theme — its own content does
- * not matter. The workflow file itself is restored after the reset, keeping
- * it owned by this plugin (single source of truth, no drift).
- */
-const BLOG_DEPLOY_WORKFLOW = `name: Deploy Site
 
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-  repository_dispatch:
-    types: [contents-updated]
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: site-deploy
-  cancel-in-progress: true
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Sync theme source
-        env:
-          THEME_REPO: \${{ secrets.THEME_REPO }}
-        run: |
-          set -euo pipefail
-          THEME_REPO="\${THEME_REPO:-57Darling02/VitePress_butterfly}"
-          cp .github/workflows/deploy.yml /tmp/vpb-deploy.yml
-          git remote add upstream "https://github.com/$THEME_REPO.git"
-          git fetch --depth=1 upstream main
-          git reset --hard upstream/main
-          mkdir -p .github/workflows
-          cp /tmp/vpb-deploy.yml .github/workflows/deploy.yml
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build with VitePress
-        env:
-          WIKI_URL: \${{ secrets.WIKI_URL }}
-          PAT: \${{ secrets.PAT }}
-        run: pnpm docs:build
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .vitepress/dist
-
-  deploy-pages:
-    name: Deploy GitHub Pages
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: \${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-`;
 
 export interface BlogServiceDeps {
   app: App;
@@ -192,19 +111,19 @@ export class BlogService {
   // ------------------------------------------------------------------
 
   /**
-   * Deploys the theme:
+   * Deploys the theme (a one-time snapshot, nothing tracks the theme
+   * afterwards):
    *
    * 1. ensure the content repository exists (private, empty) and overwrite
    *    its default branch with the local vault content (API force push);
-   * 2. ensure the blog repository exists (public, empty) — an existing one
-   *    is reused as-is, its content is irrelevant;
-   * 3. enable Actions, write all secrets and configure Pages;
-   * 4. install the thin deploy workflow on the blog repository — this push
-   *    itself triggers the first build, which force-syncs the theme;
-   * 5. turn the local vault into a full Git working copy (obsidian-git).
+   * 2. ensure the blog repository exists (public) and snapshot the theme
+   *    source into it (existing content is overwritten, so a repository
+   *    that is "wrong" — e.g. another user's old blog — becomes correct);
+   * 3. enable Actions, write the secrets and configure Pages;
+   * 4. trigger the first build of the snapshot.
    *
-   * Rerunning is safe: everything is idempotent, and the local content
-   * always wins on the content repository.
+   * Rerunning is safe: everything is idempotent, the local content always
+   * wins on the content repository, and the theme is re-snapshotted.
    */
   async setup(): Promise<void> {
     const { pat, blogRepoName, themeRepo, configurePages } = this.requireSettings("部署主题");
@@ -232,8 +151,8 @@ export class BlogService {
       authorEmail: `${user.login}@users.noreply.github.com`,
     });
 
-    // 2. Blog repository: create when missing; existing ones are reused
-    //    without any content check (every build overwrites them anyway).
+    // 2. Blog repository: create when missing, then snapshot the theme into
+    //    it (its previous content, whatever it was, is overwritten).
     const blog = {
       owner: user.login,
       name: this.resolveBlogRepoName(blogRepoName, user.login),
@@ -242,20 +161,26 @@ export class BlogService {
       new Notice(`博客仓库不存在，正在创建 ${blog.name} ...`);
       await client.createRepository({ name: blog.name, private: false });
     }
+    const theme = parseRepoRef(themeRepo.trim() || DEFAULT_THEME_REPO);
+    new Notice(`正在把主题快照写入 ${blog.name} ...`);
+    await client.copyRepositoryBranch(theme, blog, {
+      message: "Deploy theme: snapshot theme source",
+      authorName: user.login,
+      authorEmail: `${user.login}@users.noreply.github.com`,
+    });
 
     // 3. Wire everything: Actions, secrets, Pages.
     await client.enableActions(blog);
     await client.setActionsSecret(blog, "WIKI_URL", `https://github.com/${content.repository.owner}/${content.repository.name}.git`);
     await client.setActionsSecret(blog, "PAT", pat);
-    await client.setActionsSecret(blog, "THEME_REPO", themeRepo.trim() || DEFAULT_THEME_REPO);
     await client.setActionsSecret(content.repository, "BLOG_REPO", `${blog.owner}/${blog.name}`);
     await client.setActionsSecret(content.repository, "PAT", pat);
     if (configurePages) {
       await client.configurePages(blog);
     }
 
-    // 4. Install the deploy workflow; this push triggers the first build.
-    await client.putFile(blog, ".github/workflows/deploy.yml", BLOG_DEPLOY_WORKFLOW, "Deploy theme: install deploy workflow");
+    // 4. Kick off the first build of the snapshot.
+    await client.dispatchRepositoryEvent(blog, "contents-updated");
 
     // 5. Make the local vault a full Git working copy for obsidian-git.
     await this.ensureLocalGit(content.repository, contentBranch, pat);
@@ -544,4 +469,12 @@ function sanitizeRepoName(name: string): string {
     .replace(/[^A-Za-z0-9._-]/g, "-")
     .replace(/^-+|-+$/g, "");
   return cleaned || "my-blog";
+}
+
+function parseRepoRef(value: string): GitHubRepositoryRef {
+  const match = value.trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
+  if (!match) {
+    throw new Error(`主题仓库格式应为 owner/repository：${value}`);
+  }
+  return { owner: match[1], name: match[2] };
 }
