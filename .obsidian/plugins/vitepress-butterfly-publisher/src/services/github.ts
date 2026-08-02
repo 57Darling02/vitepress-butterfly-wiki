@@ -427,7 +427,7 @@ export class GitHubClient {
 
     if (response.status < 200 || response.status >= 300) {
       throw new GitHubApiError(
-        apiMessage(response.json, response.status),
+        apiMessage(response.text, response.status),
         response.status,
         url,
       );
@@ -544,10 +544,15 @@ export class GitHubClient {
 
     if (response.status < 200 || response.status >= 300) {
       throw new GitHubApiError(
-        apiMessage(response.json, response.status),
+        apiMessage(response.text, response.status),
         response.status,
         url,
       );
+    }
+
+    // 204 No Content (e.g. workflow dispatches, secret deletion) has no body.
+    if (response.status === 204 || response.text.length === 0) {
+      return undefined as T;
     }
 
     return response.json as T;
@@ -622,14 +627,19 @@ function wait(durationMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }
 
-function apiMessage(payload: unknown, status: number): string {
-  if (
-    payload
-    && typeof payload === "object"
-    && "message" in payload
-    && typeof payload.message === "string"
-  ) {
-    return payload.message;
+function apiMessage(body: string, status: number): string {
+  try {
+    const payload = JSON.parse(body);
+    if (
+      payload
+      && typeof payload === "object"
+      && "message" in payload
+      && typeof payload.message === "string"
+    ) {
+      return payload.message;
+    }
+  } catch {
+    // Non-JSON error body; fall through to the generic message.
   }
 
   return `GitHub API request failed with status ${status}.`;

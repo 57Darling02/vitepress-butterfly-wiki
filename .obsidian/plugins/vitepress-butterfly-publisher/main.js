@@ -3286,7 +3286,7 @@ var GitHubClient = class {
     });
     if (response.status < 200 || response.status >= 300) {
       throw new GitHubApiError(
-        apiMessage(response.json, response.status),
+        apiMessage(response.text, response.status),
         response.status,
         url
       );
@@ -3372,10 +3372,13 @@ var GitHubClient = class {
     });
     if (response.status < 200 || response.status >= 300) {
       throw new GitHubApiError(
-        apiMessage(response.json, response.status),
+        apiMessage(response.text, response.status),
         response.status,
         url
       );
+    }
+    if (response.status === 204 || response.text.length === 0) {
+      return void 0;
     }
     return response.json;
   }
@@ -3433,9 +3436,13 @@ function throwIfAborted(signal) {
 function wait(durationMs) {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }
-function apiMessage(payload, status) {
-  if (payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string") {
-    return payload.message;
+function apiMessage(body, status) {
+  try {
+    const payload = JSON.parse(body);
+    if (payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string") {
+      return payload.message;
+    }
+  } catch {
   }
   return `GitHub API request failed with status ${status}.`;
 }
