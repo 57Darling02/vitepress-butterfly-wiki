@@ -381,9 +381,12 @@ export class GitHubClient {
     const fromRepo = await this.getRepository(from);
     const branch = fromRepo.defaultBranch;
 
-    const headCommit = await this.request<{ tree: { sha: string } }>(
-      `${this.repositoryPath(from)}/git/commits/${encodeURIComponent(branch)}`,
-    );
+    // The Git Data API's commit endpoint only accepts SHAs, not branch
+    // names; the regular commits endpoint resolves branch names fine.
+    const headCommit = await this.request<{
+      sha: string;
+      commit: { tree: { sha: string } };
+    }>(`${this.repositoryPath(from)}/commits/${encodeURIComponent(branch)}`);
     const tree = await this.request<{
       tree: readonly {
         path: string;
@@ -391,7 +394,7 @@ export class GitHubClient {
         type: string;
         sha: string;
       }[];
-    }>(`${this.repositoryPath(from)}/git/trees/${headCommit.tree.sha}?recursive=1`);
+    }>(`${this.repositoryPath(from)}/git/trees/${headCommit.commit.tree.sha}?recursive=1`);
 
     // Copy every blob to the target repository.
     const blobShas = new Map<string, string>();

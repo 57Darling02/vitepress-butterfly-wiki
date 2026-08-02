@@ -3426,10 +3426,8 @@ var GitHubClient = class {
   async copyRepositoryBranch(from, to, options) {
     const fromRepo = await this.getRepository(from);
     const branch = fromRepo.defaultBranch;
-    const headCommit = await this.request(
-      `${this.repositoryPath(from)}/git/commits/${encodeURIComponent(branch)}`
-    );
-    const tree = await this.request(`${this.repositoryPath(from)}/git/trees/${headCommit.tree.sha}?recursive=1`);
+    const headCommit = await this.request(`${this.repositoryPath(from)}/commits/${encodeURIComponent(branch)}`);
+    const tree = await this.request(`${this.repositoryPath(from)}/git/trees/${headCommit.commit.tree.sha}?recursive=1`);
     const blobShas = /* @__PURE__ */ new Map();
     for (const entry of tree.tree) {
       if (entry.type !== "blob") {
@@ -3849,6 +3847,10 @@ var BlogService = class {
       authorName: user.login,
       authorEmail: `${user.login}@users.noreply.github.com`
     });
+    const theme = parseRepoRef(themeRepo.trim() || DEFAULT_THEME_REPO);
+    if (!await this.repositoryExists(client, theme)) {
+      throw new Error(`\u4E3B\u9898\u4ED3\u5E93 ${theme.owner}/${theme.name} \u4E0D\u5B58\u5728\u6216\u65E0\u6CD5\u8BBF\u95EE\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u300C\u4E3B\u9898\u4ED3\u5E93\u300D\u3002`);
+    }
     const blog = {
       owner: user.login,
       name: this.resolveBlogRepoName(blogRepoName, user.login)
@@ -3857,7 +3859,6 @@ var BlogService = class {
       new import_obsidian2.Notice(`\u535A\u5BA2\u4ED3\u5E93\u4E0D\u5B58\u5728\uFF0C\u6B63\u5728\u521B\u5EFA ${blog.name} ...`);
       await client.createRepository({ name: blog.name, private: false });
     }
-    const theme = parseRepoRef(themeRepo.trim() || DEFAULT_THEME_REPO);
     new import_obsidian2.Notice(`\u6B63\u5728\u628A\u4E3B\u9898\u5FEB\u7167\u5199\u5165 ${blog.name} ...`);
     await client.copyRepositoryBranch(theme, blog, {
       message: "Deploy theme: snapshot theme source",

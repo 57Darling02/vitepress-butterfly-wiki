@@ -152,7 +152,13 @@ export class BlogService {
     });
 
     // 2. Blog repository: create when missing, then snapshot the theme into
-    //    it (its previous content, whatever it was, is overwritten).
+    //    it (its previous content, whatever it was, is overwritten). The
+    //    theme is validated first so a bad setting fails before any
+    //    repository is created.
+    const theme = parseRepoRef(themeRepo.trim() || DEFAULT_THEME_REPO);
+    if (!(await this.repositoryExists(client, theme))) {
+      throw new Error(`主题仓库 ${theme.owner}/${theme.name} 不存在或无法访问，请检查设置中的「主题仓库」。`);
+    }
     const blog = {
       owner: user.login,
       name: this.resolveBlogRepoName(blogRepoName, user.login),
@@ -161,7 +167,6 @@ export class BlogService {
       new Notice(`博客仓库不存在，正在创建 ${blog.name} ...`);
       await client.createRepository({ name: blog.name, private: false });
     }
-    const theme = parseRepoRef(themeRepo.trim() || DEFAULT_THEME_REPO);
     new Notice(`正在把主题快照写入 ${blog.name} ...`);
     await client.copyRepositoryBranch(theme, blog, {
       message: "Deploy theme: snapshot theme source",
