@@ -16,6 +16,8 @@ export interface PluginSettings {
 	blogRepoName: string;
 	/** Theme source repository, used by the Setup workflow. */
 	themeRepo: string;
+	/** Template repository used to create the content repository on first Setup. */
+	templateRepo: string;
 	/** Whether Setup should try to enable GitHub Pages. */
 	configurePages: boolean;
 	/** Paths published by the last successful push. */
@@ -27,6 +29,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	repoName: "",
 	blogRepoName: "",
 	themeRepo: "57Darling02/VitePress_butterfly",
+	templateRepo: "57Darling02/vitepress-butterfly-wiki",
 	configurePages: true,
 	publishedPaths: [],
 };
@@ -80,7 +83,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("文章仓库名")
-			.setDesc("一般无需填写：插件会自动识别（Git 克隆目录或 Vault 名称匹配）。识别失败时才需要手动指定。")
+			.setDesc("留空时自动识别（Git 克隆目录或 Vault 名称匹配）；首次 Setup 未识别到时会以该名称创建仓库，默认使用 Vault 名称。")
 			.addText((text) => {
 				text.setPlaceholder("自动识别");
 				this.bindText(text, "repoName", settings.repoName, (value) => value.trim());
@@ -100,6 +103,14 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			.addText((text) => {
 				text.setPlaceholder("57Darling02/VitePress_butterfly");
 				this.bindText(text, "themeRepo", settings.themeRepo, (value) => value.trim());
+			});
+
+		new Setting(containerEl)
+			.setName("模板仓库")
+			.setDesc("首次 Setup 时用于创建文章仓库的模板源，一般无需修改。")
+			.addText((text) => {
+				text.setPlaceholder("57Darling02/vitepress-butterfly-wiki");
+				this.bindText(text, "templateRepo", settings.templateRepo, (value) => value.trim());
 			});
 
 		new Setting(containerEl)

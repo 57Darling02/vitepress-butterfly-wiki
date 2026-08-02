@@ -11,18 +11,14 @@
 
 ## 快速开始（约 5 分钟）
 
-### 1. 创建自己的文章仓库
-
-点击右上角 `Use this template` 创建仓库，名称随意（例如 `my-blog`），并**勾选 Private 保持私密**。
-
-### 2. 拿到仓库内容
+### 1. 拿到仓库内容
 
 任选其一：
 
-- **移动端 / 不想装 Git**：GitHub 网页登录后 `Code → Download ZIP`，解压到手机或电脑
-- **电脑**：`git clone https://github.com/你的用户名/my-blog.git`
+- **零门槛（推荐）**：直接下载本模板的 ZIP（`Code → Download ZIP`，公开仓库无需登录），解压后重命名为你的博客目录。之后插件会自动为你创建私密文章仓库
+- **先建仓库**：点击右上角 `Use this template` 创建自己的私密仓库（名称随意，例如 `my-blog`），再下载 ZIP 或 `git clone`
 
-> 私密仓库需要登录 GitHub 才能下载 ZIP。下载的压缩包**不包含** `.git` 目录，这没关系——发布插件通过 GitHub API 工作，不需要本地 Git。
+> 下载的压缩包不包含 `.git` 目录，这没关系——发布插件通过 GitHub API 工作，不需要本地 Git。
 
 ### 3. 用 Obsidian 打开
 
@@ -34,7 +30,7 @@
 
 1. 准备一个 GitHub PAT：`GitHub 头像 → Settings → Developer settings → Personal access tokens → Tokens (classic)`，勾选权限 `repo` + `workflow`（只显示一次，建议专用 token）
 2. 在插件设置中填入 **GitHub PAT**——这是唯一必填项。文章仓库会自动识别（Git 克隆目录读取 `.git`，压缩包则按 Vault 名称匹配）；博客仓库名留空时默认 `你的用户名.github.io`
-3. 点击 **触发 Setup**，等待插件提示 Setup 完成（约 1~2 分钟）
+3. 点击 **触发 Setup**：如果未识别到已有仓库，插件会先从模板自动创建你的私密文章仓库（名称默认用 Vault 名，可在设置中修改），然后运行 Setup 工作流（约 1~2 分钟）
 
 Setup 会自动完成：fork 主题仓库 → 配置两个仓库的 secrets → 开启 GitHub Pages → 触发第一次构建部署。你的 PAT 只写入 GitHub 加密的 secrets，**不会出现在任何工作流日志中**；Setup 完成后插件会自动清理它写入的临时 secrets。
 

@@ -18,8 +18,8 @@ export default class VitePressButterflyPublisher extends Plugin {
 		this.blog = new BlogService({
 			app: this.app,
 			getSettings: () => this.settings,
-			savePublishedPaths: async (paths) => {
-				this.settings = { ...this.settings, publishedPaths: paths };
+			saveSettings: async (changes) => {
+				this.settings = { ...this.settings, ...changes };
 				await this.saveData(this.settings);
 			},
 		});
@@ -28,7 +28,11 @@ export default class VitePressButterflyPublisher extends Plugin {
 			new PublisherSettingsTab(this.app, this, () => this.settings, (changes) => this.updateSettings(changes), {
 				onValidate: () => this.runWithFeedback("验证配置", () => this.blog.validate().then((result) => {
 					const state = result.setupSecretsPresent ? "Setup 已完成" : "Setup 未完成";
-					new Notice(`验证通过：@${result.login}，仓库 ${result.repository.owner}/${result.repository.name}（${state}）`);
+					if (result.repository) {
+						new Notice(`验证通过：@${result.login}，仓库 ${result.repository.owner}/${result.repository.name}（${state}）`);
+					} else {
+						new Notice(`验证通过：@${result.login}。未识别到文章仓库，触发 Setup 时会自动创建。`);
+					}
 				})),
 				onSetup: () => this.blog.setup(),
 				onTrigger: () => this.blog.triggerDeploy(),
@@ -76,6 +80,7 @@ export default class VitePressButterflyPublisher extends Plugin {
 		this.settings = { ...this.settings, ...changes };
 		await this.saveData(this.settings);
 	}
+
 
 	private async createArticle(title: string, directory: string): Promise<void> {
 		const safeName = title.trim().replace(/[\\/:*?"<>|#^\[\]]/g, "-").replace(/\s+/g, "-");

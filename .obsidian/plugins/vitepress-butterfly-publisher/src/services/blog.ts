@@ -6,6 +6,7 @@ import { pullLatest, PullLatestResult } from "./fetcher";
 import type { PluginSettings } from "../settings";
 
 const DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
+const DEFAULT_TEMPLATE_REPO = "57Darling02/vitepress-butterfly-wiki";
 const SETUP_SECRETS = ["SETUP_PAT", "BLOG_REPO_NAME", "THEME_REPO", "CONFIGURE_PAGES"] as const;
 const SETUP_WORKFLOW = "setup.yml";
 const TRIGGER_WORKFLOW = "trigger.yml";
@@ -14,27 +15,34 @@ const DEPLOY_WORKFLOW = "deploy.yml";
 export interface BlogServiceDeps {
   app: App;
   getSettings(): PluginSettings;
-  savePublishedPaths(paths: string[]): Promise<void>;
+  saveSettings(changes: Partial<PluginSettings>): Promise<void>;
 }
 
 export interface ValidateResult {
   login: string;
-  repository: GitHubRepositoryRef;
+  /** Resolved repository, or `null` when it could not be detected. */
+  repository: GitHubRepositoryRef | null;
   setupSecretsPresent: boolean;
 }
 
 export class BlogService {
   constructor(private readonly deps: BlogServiceDeps) {}
 
-  /** Checks the token, resolves the current repository, and reports setup state. */
+  /**
+   * Connectivity check: verifies the PAT and reports repository/setup
+   * state. A missing repository is not an error — Setup will create one.
+   */
   async validate(): Promise<ValidateResult> {
     const { pat } = this.requireSettings("验证");
     const client = new GitHubClient(pat);
     const user = await client.getAuthenticatedUser();
-    const repository = await this.resolveRepository(client);
+    const repository = await this.detectRepository(client);
 
-    const secrets = await client.listSecrets(repository);
-    const setupSecretsPresent = secrets.includes("SETUP_PAT") && secrets.includes("BLOG_REPO_NAME");
+    let setupSecretsPresent = false;
+    if (repository) {
+      const secrets = await client.listSecrets(repository);
+      setupSecretsPresent = secrets.includes("SETUP_PAT") && secrets.includes("BLOG_REPO_NAME");
+    }
 
     return { login: user.login, repository, setupSecretsPresent };
   }
@@ -43,13 +51,18 @@ export class BlogService {
    * Writes the setup inputs into Actions secrets (never into workflow
    * dispatch inputs), runs the Setup Blog workflow, then removes the
    * one-time secrets. The PAT therefore never appears in workflow run logs.
+   * When no repository exists yet, one is created from the template first.
    */
   async setup(): Promise<void> {
     const { pat, blogRepoName, themeRepo, configurePages } = this.requireSettings("触发 Setup");
-
     const client = new GitHubClient(pat);
-    const { repository, login } = await this.validate();
-    const resolvedBlogRepoName = blogRepoName.trim() || `${login}.github.io`;
+    const user = await client.getAuthenticatedUser();
+
+    let repository = await this.detectRepository(client);
+    if (!repository) {
+      repository = await this.createRepository(client, user.login);
+    }
+    const resolvedBlogRepoName = blogRepoName.trim() || `${user.login}.github.io`;
 
     await client.setActionsSecret(repository, "SETUP_PAT", pat);
     await client.setActionsSecret(repository, "BLOG_REPO_NAME", resolvedBlogRepoName);
@@ -81,7 +94,7 @@ export class BlogService {
   /** Manually dispatches the rebuild trigger workflow. */
   async triggerDeploy(): Promise<void> {
     const client = this.client();
-    const { repository } = await this.validate();
+    const repository = await this.requireRepository(client);
     await client.dispatchWorkflow(repository, TRIGGER_WORKFLOW);
     new Notice("已触发博客重建。");
   }
@@ -89,7 +102,7 @@ export class BlogService {
   /** Replaces the Vault with the latest repository content. */
   async pull(): Promise<PullLatestResult> {
     const client = this.client();
-    const { repository } = await this.validate();
+    const repository = await this.requireRepository(client);
     const result = await pullLatest({ vault: this.deps.app.vault, client, repository });
     new Notice(
       result.changed
@@ -133,7 +146,7 @@ export class BlogService {
 
   private async publishOnce(force: boolean): Promise<PublishVaultResult> {
     const client = this.client();
-    const { repository } = await this.validate();
+    const repository = await this.requireRepository(client);
     const previousPaths = this.deps.getSettings().publishedPaths;
     const result = await publishVault({
       vault: this.deps.app.vault,
@@ -148,7 +161,7 @@ export class BlogService {
       return result;
     }
 
-    await this.deps.savePublishedPaths(result.publishedPaths);
+    await this.deps.saveSettings({ publishedPaths: result.publishedPaths });
     new Notice(`已发布 ${result.publishedPaths.length} 个文件${force ? "（覆盖云端）" : ""}。`);
     return result;
   }
@@ -156,13 +169,14 @@ export class BlogService {
   private async notifyAndWaitDeploy(): Promise<void> {
     const { pat, blogRepoName } = this.requireSettings("发布");
     const client = new GitHubClient(pat);
-    const { repository, login } = await this.validate();
+    const repository = await this.requireRepository(client);
+    const user = await client.getAuthenticatedUser();
 
     new Notice("已发布，正在触发博客构建...");
     const startedAfter = new Date();
     await client.dispatchWorkflow(repository, TRIGGER_WORKFLOW);
 
-    const blogRepo = { owner: repository.owner, name: blogRepoName.trim() || `${login}.github.io` };
+    const blogRepo = { owner: repository.owner, name: blogRepoName.trim() || `${user.login}.github.io` };
     try {
       const run = await client.waitForWorkflowRun(blogRepo, DEPLOY_WORKFLOW, {
         event: "repository_dispatch",
@@ -193,19 +207,57 @@ export class BlogService {
     return settings;
   }
 
+  private async requireRepository(client: GitHubClient): Promise<GitHubRepositoryRef> {
+    const repository = await this.detectRepository(client);
+    if (!repository) {
+      throw new Error("未识别到文章仓库。请先「触发 Setup」（会自动创建仓库），或在设置中填写仓库名。");
+    }
+    return repository;
+  }
+
+  /**
+   * Creates the private content repository from the template. The template
+   * content matches a fresh template zip, so the first publish is a no-op.
+   */
+  private async createRepository(
+    client: GitHubClient,
+    owner: string,
+  ): Promise<GitHubRepositoryRef> {
+    const { repoName, templateRepo } = this.deps.getSettings();
+    const name = sanitizeRepoName(repoName || this.deps.app.vault.getName());
+    const template = parseRepoRef(templateRepo || DEFAULT_TEMPLATE_REPO);
+
+    new Notice(`未识别到文章仓库，正在从模板创建 ${name} ...`);
+    const created = await client.createRepositoryFromTemplate(template, {
+      owner,
+      name,
+      private: true,
+    });
+
+    const repository = { owner, name: created.name };
+    await this.deps.saveSettings({ repoName: created.name });
+    new Notice(`文章仓库已创建：${owner}/${created.name}`);
+    return repository;
+  }
+
   /**
    * Resolves the content repository without requiring manual input:
-   * 1. the manually entered repository name, if any;
+   * 1. the manually entered repository name, if it exists;
    * 2. the `origin` remote from `.git/config` (desktop clones);
    * 3. a repository whose name matches the Vault folder (zip downloads).
+   * Returns `null` when none of these match — Setup will create one.
    */
-  private async resolveRepository(client: GitHubClient): Promise<GitHubRepositoryRef> {
+  private async detectRepository(client: GitHubClient): Promise<GitHubRepositoryRef | null> {
     const manual = this.deps.getSettings().repoName.trim();
     if (manual) {
       const user = await client.getAuthenticatedUser();
-      const repository = { owner: user.login, name: manual };
-      await client.getRepository(repository);
-      return repository;
+      try {
+        await client.getRepository({ owner: user.login, name: manual });
+        return { owner: user.login, name: manual };
+      } catch {
+        // The manually entered name does not exist yet; Setup will create it.
+        return null;
+      }
     }
 
     const config = await this.deps.app.vault.adapter
@@ -229,15 +281,29 @@ export class BlogService {
       }
     }
 
-    throw new Error(
-      "无法自动识别文章仓库：当前 Vault 不是 Git 克隆目录，且 Vault 名称未匹配到你的仓库。请在设置中手动填写仓库名。",
-    );
+    return null;
   }
 }
 
 /** GitHub rejects a non-force ref update when the remote has moved ahead. */
 function isRefRejected(error: unknown): boolean {
   return error instanceof GitHubApiError && error.status === 422;
+}
+
+function sanitizeRepoName(name: string): string {
+  const cleaned = name
+    .trim()
+    .replace(/[^A-Za-z0-9._-]/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned || "my-blog";
+}
+
+function parseRepoRef(value: string): GitHubRepositoryRef {
+  const match = value.trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
+  if (!match) {
+    throw new Error(`模板仓库格式应为 owner/repository：${value}`);
+  }
+  return { owner: match[1], name: match[2] };
 }
 
 function confirmForcePush(app: App): Promise<boolean> {

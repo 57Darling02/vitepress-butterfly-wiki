@@ -230,6 +230,34 @@ export class GitHubClient {
     }));
   }
 
+  /**
+   * Creates a new repository from a template, copying all of its content
+   * (including workflows and the bundled plugin).
+   */
+  async createRepositoryFromTemplate(
+    template: RepoRef,
+    options: {
+      owner: string;
+      name: string;
+      private?: boolean;
+    },
+  ): Promise<GitHubRepository> {
+    const result = await this.request<GitHubRepositoryResponse>(
+      `${this.repositoryPath(template)}/generate`,
+      {
+        method: "POST",
+        body: {
+          owner: options.owner,
+          name: options.name,
+          private: options.private ?? true,
+          include_all_branches: false,
+        },
+      },
+    );
+
+    return this.toRepository(result);
+  }
+
   async getRef(repository: RepoRef, ref = "main"): Promise<GitRef> {
     const result = await this.request<GitHubRefResponse>(
       `${this.repositoryPath(repository)}/git/ref/${encodeRef(ref)}`,
