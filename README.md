@@ -6,7 +6,7 @@
 
 ```text
 本仓库（私密）＝ 你的文章仓库：文章、图片、站点配置，你唯一需要维护的地方
-博客仓库（公开）＝ 主题与构建部署：由 Setup 工作流自动 fork 并配置，日常不用碰
+博客仓库（公开）＝ 主题与构建部署：由插件自动从主题模板创建并配置，日常不用碰
 ```
 
 ## 快速开始（约 5 分钟）
@@ -30,9 +30,9 @@
 
 1. 准备一个 GitHub PAT：`GitHub 头像 → Settings → Developer settings → Personal access tokens → Tokens (classic)`，勾选权限 `repo` + `workflow`（只显示一次，建议专用 token）
 2. 在插件设置中填入 **GitHub PAT**——这是唯一必填项。文章仓库会自动识别（Git 克隆目录读取 `.git`，压缩包则按 Vault 名称匹配）；博客仓库名留空时默认 `你的用户名.github.io`
-3. 点击 **触发 Setup**：如果未识别到已有仓库，插件会先从模板自动创建你的私密文章仓库（名称默认用 Vault 名，可在设置中修改），然后运行 Setup 工作流（约 1~2 分钟）
+3. 依次点击四项检测（PAT 连通性 → 文章仓库 → 博客仓库 → 就绪检测），全部通过后点击 **触发 Setup**
 
-Setup 会自动完成：fork 主题仓库 → 配置两个仓库的 secrets → 开启 GitHub Pages → 触发第一次构建部署。你的 PAT 只写入 GitHub 加密的 secrets，**不会出现在任何工作流日志中**；Setup 完成后插件会自动清理它写入的临时 secrets。
+Setup 由插件**直接通过 GitHub API 完成**（不需要 GitHub Actions 服务器）：创建缺失的仓库（文章仓库私密、博客仓库公开，均从模板创建，**不需要 fork**）、配置两个仓库的 secrets、开启 GitHub Pages、直接触发第一次构建部署。重复执行 Setup 也是安全的（幂等）：已存在的仓库直接复用，secrets 总是重新写入。
 
 ### 5. 开始写作
 
@@ -48,7 +48,7 @@ Setup 完成后插件会调用内置的 obsidian-git，**自动初始化文章�
 
 | 插件 | 职责 |
 |---|---|
-| **VitePress Butterfly Publisher**（内置） | 初始化与部署：创建文章仓库、配置 secrets、触发 Setup、克隆到本地、触发重建 |
+| **VitePress Butterfly Publisher**（内置） | 初始化与部署：创建缺失的仓库（文章/博客）、配置 secrets、启用 Pages、直接触发部署、克隆到本地 |
 | **obsidian-git**（内置） | 日常内容同步：Commit / Push / Pull，桌面端与移动端均可 |
 
 > Publisher 直接复用 obsidian-git 的 Git 引擎，不会重复加载第二套 Git。obsidian-git 在移动端内置纯 JS Git，无需安装软件；Publisher 会把 PAT 写入 obsidian-git 的本地凭据，并写入本地 `.git/config` 的远程地址（不会上传），随后可直接 Commit / Push / Pull。
@@ -59,18 +59,18 @@ Setup 完成后插件会调用内置的 obsidian-git，**自动初始化文章�
 
 | 检测 | 验证内容 |
 |---|---|
-| PAT 连通性 | token 是否有效（`GET /user`），不涉及任何仓库 |
-| 博客文章仓库 | 文章仓库能否访问（Git 克隆目录 / Vault 名称自动识别） |
-| 博客样式仓库 | 博客仓库能否访问（留空默认 `用户名.github.io`） |
-| 就绪检测 | 两个仓库的 Actions secrets 是否完整（Setup 完成后才就绪） |
+| PAT 连通性 | token 是否有效（`GET /user`），通过后才能继续后续检测 |
+| 博客文章仓库 | 解析出状态：待创建可用 / 待配置可用（Git 克隆目录 / Vault 名称自动识别） |
+| 博客样式仓库 | 只判断是否存在（留空默认 `用户名.github.io`），不需要是主题仓库的 fork |
+| 就绪检测 | 两个仓库均处于可用状态（待创建或待配置）后，即可执行 Setup |
 
 操作区提供三个动作：
 
 | 操作 | 作用 |
 |---|---|
-| 触发 Setup | 创建博客仓库、配置全部 secrets 并触发首次部署，完成后自动克隆到本地（只需一次） |
+| 触发 Setup | 创建缺失的仓库（文章仓库私密、博客仓库公开）、配置 secrets、启用 Pages 并直接触发首次部署，完成后自动克隆到本地（幂等，可重复执行） |
 | 克隆到本地 | 生成 `.git` 工作副本（Setup 失败时可手动重试） |
-| 触发部署 | 不发布内容，仅通知博客仓库重新构建 |
+| 触发部署 | 不发布内容，直接通知博客仓库重新构建 |
 
 > 发布与拉取交给 obsidian-git：Push 后文章仓库的 trigger 工作流会自动通知博客仓库重建。
 
@@ -124,12 +124,12 @@ layout: doc
 ## 主题与更新
 
 - 主题源码：[57Darling02/VitePress_butterfly](https://github.com/57Darling02/VitePress_butterfly)
-- 主题更新在**博客仓库**（fork）上进行，使用 `git reset --hard upstream/main` 等方式同步上游——因为文章不放在那里，更新永远不会影响你的文章。
+- 博客仓库与主题仓库**没有 fork 关系**。需要同步主题更新时，在博客仓库手动执行（例如 `git fetch` 主题仓库后 `git reset --hard` 再推送），因为文章不放在那里，更新永远不会影响你的文章。
 
 ## 常见问题
 
 **PAT 需要什么权限？**
-`repo` + `workflow`。Setup 工作流会把它写入两个仓库的 secrets：博客仓库构建时用它拉取私密文章仓库，文章仓库用它通知博客重新部署。
+`repo` + `workflow`。插件会把它写入两个仓库的 secrets：博客仓库构建时用它拉取私密文章仓库，文章仓库用它通知博客重新部署。
 
 **文章仓库必须私密吗？**
 推荐私密。博客仓库是公开的（GitHub Pages 部署），但你的文章始终只存在于私密仓库中，构建时才被拉取。

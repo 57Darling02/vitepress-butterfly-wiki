@@ -9,7 +9,7 @@ import {
 	TextComponent,
 } from "obsidian";
 
-import type { RepoCheckResult, ReadyCheckResult } from "./services/blog";
+import type { RepoCheckResult } from "./services/blog";
 
 export interface PluginSettings {
 	pat: string;
@@ -44,8 +44,8 @@ export interface PublisherSettingsActions {
 	onCheckContentRepo(): Promise<RepoCheckResult>;
 	/** Step 3: blog (theme) repository access. */
 	onCheckBlogRepo(): Promise<RepoCheckResult>;
-	/** Step 4: both repositories' secrets completeness. */
-	onCheckReady(): Promise<ReadyCheckResult>;
+	/** Step 4: both repositories must be in a usable state. */
+	onCheckReady(): Promise<void>;
 	onSetup(): Promise<unknown>;
 	onTrigger(): Promise<unknown>;
 	onClone(): Promise<unknown>;
@@ -122,10 +122,10 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					() => this.actions.onCheckContentRepo(),
 					(result) => this.setStatus(
 						contentStatus,
-						result.accessible ? "ok" : "warn",
-						result.accessible
-							? `✓ 可访问 ${result.repository?.owner}/${result.repository?.name}`
-							: "未识别到可访问的仓库（触发 Setup 会自动创建）",
+						result.status === "configure" ? "ok" : "warn",
+						result.status === "configure"
+							? `✓ 待配置可用 ${result.repository?.owner}/${result.repository?.name}`
+							: "⚠ 待创建可用（Setup 时自动从模板创建私密仓库）",
 					),
 					"文章仓库检测失败",
 				);
@@ -150,10 +150,10 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					() => this.actions.onCheckBlogRepo(),
 					(result) => this.setStatus(
 						blogStatus,
-						result.accessible ? "ok" : "warn",
-						result.accessible
-							? `✓ 可访问 ${result.repository?.owner}/${result.repository?.name}`
-							: "仓库不存在（触发 Setup 时会创建）",
+						result.status === "configure" ? "ok" : "warn",
+						result.status === "configure"
+							? `✓ 待配置可用 ${result.repository?.owner}/${result.repository?.name}`
+							: "⚠ 待创建可用（Setup 时自动从主题模板创建公开仓库）",
 					),
 					"样式仓库检测失败",
 				);
@@ -162,7 +162,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		// --- Step 4: readiness ---
 		const readySetting = new Setting(containerEl)
 			.setName("就绪检测")
-			.setDesc("检查两个仓库的 Actions secrets 是否完整配置。");
+			.setDesc("确认两个仓库均处于可用状态（待创建或待配置）后，即可执行 Setup。");
 		const readyStatus = this.createStatus(readySetting.descEl);
 		readySetting
 			.addExtraButton((button) => {
@@ -172,12 +172,10 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					"检测就绪状态",
 					"正在检查部署配置…",
 					() => this.actions.onCheckReady(),
-					(result) => this.setStatus(
+					() => this.setStatus(
 						readyStatus,
-						result.ready ? "ok" : "warn",
-						result.ready
-							? "✓ 全部就绪，推送即可自动部署"
-							: this.readinessText(result),
+						"ok",
+						"✓ 双仓库均可用，点击「触发 Setup」完成初始化与首次部署",
 					),
 					"就绪检测失败",
 				);
@@ -186,7 +184,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		// --- Advanced ---
 		new Setting(containerEl)
 			.setName("主题仓库")
-			.setDesc("Setup 工作流 fork 的主题源仓库，一般无需修改。")
+			.setDesc("博客仓库创建时复制的主题源仓库（模板），一般无需修改。")
 			.addText((text) => {
 				text.setPlaceholder("57Darling02/VitePress_butterfly");
 				this.bindText(text, "themeRepo", settings.themeRepo, (value) => value.trim());
@@ -214,9 +212,9 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		// --- Actions ---
 		containerEl.createEl("h3", { text: "操作" });
-		this.addAction(containerEl, "触发 Setup", "创建博客仓库并配置全部 secrets 与首次部署，完成后自动克隆到本地。", "Setup 运行中...", this.actions.onSetup);
+		this.addAction(containerEl, "触发 Setup", "创建缺失的仓库、配置 secrets 与 Pages，并直接触发首次部署（无需等待 GitHub Actions）。", "Setup 执行中...", this.actions.onSetup);
 		this.addAction(containerEl, "克隆到本地", "生成 .git 工作副本，之后可用 obsidian-git 进行 Commit / Push / Pull。", "克隆中...", this.actions.onClone);
-		this.addAction(containerEl, "触发部署", "通知博客仓库重新构建部署（发布请用 obsidian-git 的 Push）。", "触发中...", this.actions.onTrigger);
+		this.addAction(containerEl, "触发部署", "直接通知博客仓库重新构建部署（发布请用 obsidian-git 的 Push）。", "触发中...", this.actions.onTrigger);
 	}
 
 	private createStatus(containerEl: HTMLElement): HTMLSpanElement {
@@ -302,17 +300,6 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			button.extraSettingsEl.classList.remove("vpb-check-running");
 			button.extraSettingsEl.removeAttribute("aria-busy");
 		}
-	}
-
-	private readinessText(result: ReadyCheckResult): string {
-		const parts: string[] = [];
-		if (result.contentMissing.length > 0) {
-			parts.push(`文章仓库缺：${result.contentMissing.join("、")}`);
-		}
-		if (result.blogMissing.length > 0) {
-			parts.push(`样式仓库缺：${result.blogMissing.join("、")}`);
-		}
-		return `未就绪（${parts.join("；")}），请先触发 Setup`;
 	}
 
 	private bindText(

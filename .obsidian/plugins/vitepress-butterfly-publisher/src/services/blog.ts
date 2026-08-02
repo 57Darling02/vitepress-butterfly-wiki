@@ -5,14 +5,6 @@ import type { PluginSettings } from "../settings";
 
 const DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
 const DEFAULT_TEMPLATE_REPO = "57Darling02/vitepress-butterfly-wiki";
-const SETUP_SECRETS = ["SETUP_PAT", "BLOG_REPO_NAME", "THEME_REPO", "CONFIGURE_PAGES"] as const;
-const SETUP_WORKFLOW = "setup.yml";
-const TRIGGER_WORKFLOW = "trigger.yml";
-
-/** Secrets the content repository needs after Setup (trigger chain). */
-const CONTENT_REQUIRED_SECRETS = ["PAT", "BLOG_REPO"] as const;
-/** Secrets the blog repository needs after Setup (build pulls the wiki). */
-const BLOG_REQUIRED_SECRETS = ["WIKI_URL", "PAT"] as const;
 
 export interface BlogServiceDeps {
   app: App;
@@ -48,27 +40,28 @@ interface AppWithPluginRegistry extends App {
   };
 }
 
-export interface RepoCheckResult {
-  /** Resolved repository reference, or `null` when it could not be detected. */
-  repository: GitHubRepositoryRef | null;
-  /** Whether the repository exists and is accessible. */
-  accessible: boolean;
-}
+export type RepoStatus = "create" | "configure";
 
-export interface ReadyCheckResult {
-  /** Missing secrets in the content repository. */
-  contentMissing: string[];
-  /** Missing secrets in the blog repository. */
-  blogMissing: string[];
-  /** Whether the whole publish chain is ready. */
-  ready: boolean;
+export interface RepoCheckResult {
+  /**
+   * `create`    — the repository does not exist yet; Setup will create it.
+   * `configure` — the repository exists and is accessible; Setup will reuse it.
+   */
+  status: RepoStatus;
+  /** Resolved repository reference, or `null` when it is not available yet. */
+  repository: GitHubRepositoryRef | null;
 }
 
 /**
  * Initialization and deployment helper. Daily content sync (commit, push,
  * pull) is handled by the obsidian-git plugin, which works on desktop and
  * mobile alike; this service covers everything git does not: repository
- * creation, Actions secrets, Setup workflow, and rebuild triggers.
+ * creation, Actions secrets, Pages configuration, and rebuild triggers.
+ *
+ * Setup is executed directly by the plugin through the GitHub API (no
+ * workflow round-trip, no fork requirement): it creates whatever repository
+ * is missing, always (re)writes both repositories' secrets, enables Actions
+ * and Pages on the blog repository, then kicks off the first build.
  */
 export class BlogService {
   constructor(private readonly deps: BlogServiceDeps) {}
@@ -84,52 +77,39 @@ export class BlogService {
     return user.login;
   }
 
-  /** 2. Content repository: resolve it, then verify access. */
+  /**
+   * 2. Content repository: resolve it against the current user's account.
+   *    A local `.git` remote that matches a repository of the user maps to
+   *    `configure`; everything else maps to `create`.
+   */
   async checkContentRepo(): Promise<RepoCheckResult> {
     const client = this.client();
-    const repository = await this.detectRepository(client);
-    return { repository, accessible: repository !== null };
+    const { repository } = await this.detectContentRepository(client);
+    return { status: repository ? "configure" : "create", repository };
   }
 
-  /** 3. Blog (theme) repository: resolve the name, then verify access. */
+  /**
+   * 3. Blog repository: existence check only (no fork relationship is
+   *    required anymore).
+   */
   async checkBlogRepo(): Promise<RepoCheckResult> {
     const client = this.client();
     const user = await client.getAuthenticatedUser();
-    const name = this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login);
-
-    const repository = { owner: user.login, name };
-    try {
-      await client.getRepository(repository);
-      return { repository, accessible: true };
-    } catch (error) {
-      if (isNotFound(error)) {
-        return { repository, accessible: false };
-      }
-      throw error;
-    }
+    const repository = {
+      owner: user.login,
+      name: this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login),
+    };
+    const exists = await this.repositoryExists(client, repository);
+    return { status: exists ? "configure" : "create", repository };
   }
 
-  /** 4. Readiness: are both repositories' secrets fully configured? */
-  async checkReady(): Promise<ReadyCheckResult> {
-    const client = this.client();
-    const user = await client.getAuthenticatedUser();
-
-    const content = await this.detectRepository(client);
-    const blogName = this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login);
-    const blog = { owner: user.login, name: blogName };
-
-    const [contentMissing, blogMissing] = await Promise.all([
-      content
-        ? getMissingSecrets(client, content, CONTENT_REQUIRED_SECRETS)
-        : Promise.resolve([...CONTENT_REQUIRED_SECRETS]),
-      getMissingSecrets(client, blog, BLOG_REQUIRED_SECRETS),
-    ]);
-
-    return {
-      contentMissing,
-      blogMissing,
-      ready: contentMissing.length === 0 && blogMissing.length === 0,
-    };
+  /**
+   * 4. Readiness: both repositories must be in a usable state
+   *    (`create` or `configure`) before Setup can run.
+   */
+  async checkReady(): Promise<void> {
+    await this.checkContentRepo();
+    await this.checkBlogRepo();
   }
 
   // ------------------------------------------------------------------
@@ -137,58 +117,83 @@ export class BlogService {
   // ------------------------------------------------------------------
 
   /**
-   * Writes the setup inputs into Actions secrets (never into workflow
-   * dispatch inputs), runs the Setup Blog workflow, then removes the
-   * one-time secrets. The PAT therefore never appears in workflow run logs.
-   * When no repository exists yet, one is created from the template first.
+   * Runs the whole initialization directly from the plugin, so every step
+   * has clear feedback and rerunning Setup is always safe:
+   *
+   * 1. create the content repository (private, from the wiki template) if missing;
+   * 2. create the blog repository (public, from the theme template) if missing —
+   *    existing repositories are reused as-is, no fork is ever required;
+   * 3. always (re)write the secrets of both repositories;
+   * 4. enable Actions and configure Pages on the blog repository;
+   * 5. dispatch the first build directly;
+   * 6. initialize the local Git working copy for obsidian-git.
    */
   async setup(): Promise<void> {
     const { pat, blogRepoName, themeRepo, configurePages } = this.requireSettings("触发 Setup");
-    const client = new GitHubClient(pat);
+    const client = this.client();
     const user = await client.getAuthenticatedUser();
 
-    let repository = await this.detectRepository(client);
-    if (!repository) {
-      repository = await this.createRepository(client, user.login);
+    // 1. Content repository.
+    const content = await this.detectContentRepository(client);
+    if (!content.repository) {
+      content.repository = await this.createRepository(client, user.login, content.preferredName);
     }
-    const resolvedBlogRepoName = this.resolveBlogRepoName(blogRepoName, user.login);
 
-    await client.setActionsSecret(repository, "SETUP_PAT", pat);
-    await client.setActionsSecret(repository, "BLOG_REPO_NAME", resolvedBlogRepoName);
-    await client.setActionsSecret(repository, "THEME_REPO", themeRepo.trim() || DEFAULT_THEME_REPO);
-    await client.setActionsSecret(repository, "CONFIGURE_PAGES", String(configurePages));
-
-    new Notice("Setup 工作流已启动，等待博客仓库创建完成...");
-    try {
-      const startedAfter = new Date();
-      await client.dispatchWorkflow(repository, SETUP_WORKFLOW);
-      const run = await client.waitForWorkflowRun(repository, SETUP_WORKFLOW, {
-        event: "workflow_dispatch",
-        startedAfter,
-        timeoutMs: 600_000,
+    // 2. Blog repository (plain repository from the theme template; no fork).
+    const blog = {
+      owner: user.login,
+      name: this.resolveBlogRepoName(blogRepoName, user.login),
+    };
+    if (!(await this.repositoryExists(client, blog))) {
+      const theme = parseRepoRef(themeRepo.trim() || DEFAULT_THEME_REPO);
+      new Notice(`博客仓库不存在，正在从主题模板创建 ${blog.name} ...`);
+      await client.createRepositoryFromTemplate(theme, {
+        owner: user.login,
+        name: blog.name,
+        private: false,
       });
-
-      if (run.conclusion !== "success") {
-        throw new Error(`Setup 工作流未成功完成（${run.conclusion}），请到仓库 Actions 页面查看日志。`);
-      }
-
-      new Notice(`Setup 完成！博客仓库：${resolvedBlogRepoName}，首次部署已触发。`);
-      await this.cloneToVault().catch((error: unknown) => {
-        new Notice(`Setup 完成，但自动克隆失败：${error instanceof Error ? error.message : String(error)}。可在操作区点击「克隆到本地」重试。`);
-      });
-    } finally {
-      for (const name of SETUP_SECRETS) {
-        await client.deleteActionsSecret(repository, name).catch(() => undefined);
-      }
     }
+
+    // 3. Secrets are always (re)written, keeping reruns idempotent.
+    await client.setActionsSecret(blog, "WIKI_URL", `https://github.com/${content.repository.owner}/${content.repository.name}.git`);
+    await client.setActionsSecret(blog, "PAT", pat);
+    await client.setActionsSecret(content.repository, "BLOG_REPO", `${blog.owner}/${blog.name}`);
+    await client.setActionsSecret(content.repository, "PAT", pat);
+
+    // 4. Enable Actions and GitHub Pages on the blog repository.
+    await client.enableActions(blog);
+    if (configurePages) {
+      await client.configurePages(blog);
+    }
+
+    // 5. Kick off the first build directly.
+    await client.dispatchRepositoryEvent(blog, "contents-updated");
+    new Notice(`Setup 完成！博客仓库：${blog.name}，首次部署已触发。`);
+
+    // 6. Initialize the local Git working copy for obsidian-git.
+    await this.cloneToVault().catch((error: unknown) => {
+      new Notice(`Setup 完成，但本地 Git 初始化失败：${error instanceof Error ? error.message : String(error)}。可在操作区点击「克隆到本地」重试。`);
+    });
   }
 
-  /** Manually dispatches the rebuild trigger workflow. */
+  /** Directly asks the blog repository to rebuild (no workflow round-trip). */
   async triggerDeploy(): Promise<void> {
     const client = this.client();
-    const repository = await this.requireRepository(client);
-    await client.dispatchWorkflow(repository, TRIGGER_WORKFLOW);
-    new Notice("已触发博客重建。");
+    const user = await client.getAuthenticatedUser();
+    const blog = {
+      owner: user.login,
+      name: this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login),
+    };
+
+    try {
+      await client.dispatchRepositoryEvent(blog, "contents-updated");
+    } catch (error) {
+      if (isNotFound(error)) {
+        throw new Error("博客仓库不存在，请先「触发 Setup」。");
+      }
+      throw error;
+    }
+    new Notice("已触发博客仓库重建。");
   }
 
   /**
@@ -317,7 +322,7 @@ export class BlogService {
   }
 
   private async requireRepository(client: GitHubClient): Promise<GitHubRepositoryRef> {
-    const repository = await this.detectRepository(client);
+    const { repository } = await this.detectContentRepository(client);
     if (!repository) {
       throw new Error("未识别到文章仓库。请先在设置中填写文章仓库名，或「触发 Setup」自动创建。");
     }
@@ -325,22 +330,23 @@ export class BlogService {
   }
 
   /**
-   * Creates the private content repository from the template. The template
-   * content matches a fresh template zip, so cloning it yields the same
-   * files the user already has.
+   * Creates the private content repository from the wiki template. The
+   * template content matches a fresh template zip, so cloning it yields the
+   * same files the user already has.
    */
   private async createRepository(
     client: GitHubClient,
     owner: string,
+    name: string,
   ): Promise<GitHubRepositoryRef> {
-    const { repoName, templateRepo } = this.deps.getSettings();
-    const name = sanitizeRepoName(repoName || this.deps.app.vault.getName());
+    const { templateRepo } = this.deps.getSettings();
     const template = parseRepoRef(templateRepo || DEFAULT_TEMPLATE_REPO);
+    const safeName = sanitizeRepoName(name);
 
-    new Notice(`未识别到文章仓库，正在从模板创建 ${name} ...`);
+    new Notice(`未识别到文章仓库，正在从模板创建 ${safeName} ...`);
     const created = await client.createRepositoryFromTemplate(template, {
       owner,
-      name,
+      name: safeName,
       private: true,
     });
 
@@ -351,43 +357,38 @@ export class BlogService {
   }
 
   /**
-   * Resolves the content repository without requiring manual input:
-   * 1. the manually entered repository name, if it exists;
-   * 2. the `origin` remote from `.git/config` (desktop clones);
+   * Resolves the content repository against the current user's account:
+   * 1. the manually entered repository name (exists → `configure`, missing → `create`);
+   * 2. the `origin` remote from `.git/config`, but only when it points at a
+   *    repository of the current user (desktop clones);
    * 3. a repository whose name matches the Vault folder (zip downloads).
-   * Returns `null` when none of these match — Setup will create one.
+   * Returns the resolved repository (or `null`) together with the preferred
+   * name to use when Setup needs to create one.
    */
-  private async detectRepository(client: GitHubClient): Promise<GitHubRepositoryRef | null> {
+  private async detectContentRepository(
+    client: GitHubClient,
+  ): Promise<{ repository: GitHubRepositoryRef | null; preferredName: string }> {
     const manual = this.deps.getSettings().repoName.trim();
     if (manual) {
       const user = await client.getAuthenticatedUser();
-      try {
-        await client.getRepository({ owner: user.login, name: manual });
-        return { owner: user.login, name: manual };
-      } catch (error) {
-        if (isNotFound(error)) {
-          // The manually entered name does not exist yet; Setup will create it.
-          return null;
-        }
-        throw error;
-      }
+      const candidate = { owner: user.login, name: manual };
+      const exists = await this.repositoryExists(client, candidate);
+      return { repository: exists ? candidate : null, preferredName: manual };
     }
 
     const config = await this.deps.app.vault.adapter
       .read(".git/config")
       .catch(() => null);
     if (config) {
-      const repository = parseGitHubRemote(config);
-      if (repository) {
-        try {
-          await client.getRepository(repository);
-          return repository;
-        } catch (error) {
-          if (isNotFound(error)) {
-            return null;
-          }
-          throw error;
+      const remote = parseGitHubRemote(config);
+      if (remote) {
+        const user = await client.getAuthenticatedUser();
+        if (remote.owner.toLowerCase() === user.login.toLowerCase()) {
+          const exists = await this.repositoryExists(client, remote);
+          return { repository: exists ? remote : null, preferredName: remote.name };
         }
+        // The remote points at someone else's repository: nothing usable.
+        return { repository: null, preferredName: remote.name };
       }
     }
 
@@ -396,31 +397,32 @@ export class BlogService {
       const repos = await client.listUserRepos();
       const hit = repos.find((repo) => repo.name === vaultName);
       if (hit) {
-        return hit;
+        return { repository: hit, preferredName: vaultName };
       }
+      return { repository: null, preferredName: vaultName };
     }
 
-    return null;
+    return { repository: null, preferredName: "my-blog" };
+  }
+
+  private async repositoryExists(
+    client: GitHubClient,
+    repository: GitHubRepositoryRef,
+  ): Promise<boolean> {
+    try {
+      await client.getRepository(repository);
+      return true;
+    } catch (error) {
+      if (isNotFound(error)) {
+        return false;
+      }
+      throw error;
+    }
   }
 }
 
 function yieldToUi(): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, 0));
-}
-
-async function getMissingSecrets(
-  client: GitHubClient,
-  repository: GitHubRepositoryRef,
-  required: readonly string[],
-): Promise<string[]> {
-  try {
-    return missingSecrets(await client.listSecrets(repository), required);
-  } catch (error) {
-    if (isNotFound(error)) {
-      return [...required];
-    }
-    throw error;
-  }
 }
 
 function isNotFound(error: unknown): boolean {
@@ -443,10 +445,6 @@ function authenticatedGitHubUrl(repository: GitHubRepositoryRef, pat: string): s
   const owner = encodeURIComponent(repository.owner);
   const token = encodeURIComponent(pat);
   return `https://${owner}:${token}@github.com/${repository.owner}/${repository.name}.git`;
-}
-
-function missingSecrets(actual: readonly string[], required: readonly string[]): string[] {
-  return required.filter((name) => !actual.includes(name));
 }
 
 function sanitizeRepoName(name: string): string {

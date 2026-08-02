@@ -256,6 +256,52 @@ export class GitHubClient {
     );
   }
 
+  /** Enables GitHub Actions on a repository (works for plain repos and forks). */
+  async enableActions(repository: RepoRef): Promise<void> {
+    await this.request<void>(
+      `${this.repositoryPath(repository)}/actions/permissions`,
+      {
+        method: "PUT",
+        body: {
+          enabled: true,
+          allowed_actions: "all",
+        },
+      },
+    );
+  }
+
+  /**
+   * Points the repository's GitHub Pages at Actions-built artifacts.
+   * Idempotent: creates the Pages site when missing, updates it otherwise.
+   */
+  async configurePages(repository: RepoRef): Promise<void> {
+    const path = `${this.repositoryPath(repository)}/pages`;
+    try {
+      await this.request(path);
+      await this.request<void>(path, {
+        method: "PUT",
+        body: { build_type: "workflow" },
+      });
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.status === 404) {
+        await this.request<void>(path, {
+          method: "POST",
+          body: { build_type: "workflow" },
+        });
+        return;
+      }
+      throw error;
+    }
+  }
+
+  /** Dispatches a repository_dispatch event (used to trigger rebuilds). */
+  async dispatchRepositoryEvent(repository: RepoRef, eventType: string): Promise<void> {
+    await this.request<void>(`${this.repositoryPath(repository)}/dispatches`, {
+      method: "POST",
+      body: { event_type: eventType },
+    });
+  }
+
   async dispatchWorkflow(
     repository: RepoRef,
     workflow: string | number,
@@ -476,6 +522,9 @@ function apiMessage(body: string, status: number): string {
   }
   if (status === 404) {
     return "GitHub 资源不存在或当前 PAT 无权访问。";
+  }
+  if (status === 422) {
+    return "仓库名已被占用或请求无法处理，请更换名称后重试。";
   }
 
   try {
