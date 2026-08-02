@@ -1,8 +1,6 @@
 import nacl from "tweetnacl";
 import { blake2b } from "@noble/hashes/blake2.js";
 
-import { bytesToBase64 } from "./git";
-
 /**
  * Encrypts a value for the GitHub Actions secrets API using libsodium's
  * sealed box scheme, implemented with tweetnacl + @noble/hashes:
@@ -48,4 +46,19 @@ function base64ToBytes(input: string): Uint8Array {
     bytes[index] = binary.charCodeAt(index);
   }
   return bytes;
+}
+
+/** Encodes binary data for GitHub's API as standard base64. */
+function bytesToBase64(content: ArrayBuffer | Uint8Array): string {
+  const bytes = content instanceof Uint8Array
+    ? content
+    : new Uint8Array(content);
+  let binary = "";
+  const chunkSize = 0x8000;
+
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+
+  return btoa(binary);
 }

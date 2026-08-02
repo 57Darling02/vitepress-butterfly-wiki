@@ -48,8 +48,6 @@ export interface PublisherSettingsActions {
 	onCheckReady(): Promise<ReadyCheckResult>;
 	onSetup(): Promise<unknown>;
 	onTrigger(): Promise<unknown>;
-	onPull(): Promise<unknown>;
-	onPush(): Promise<unknown>;
 }
 
 type SaveSettings = (changes: Partial<PluginSettings>) => Promise<void>;
@@ -75,7 +73,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		containerEl.createEl("h2", { text: "VitePress Butterfly 发布" });
 		containerEl.createEl("p", {
-			text: "当前 Vault 就是文章仓库。依次完成下方四步检测后即可发布，无需安装 Git。",
+			text: "本插件负责初始化与部署：创建仓库、配置 secrets、触发 Setup。日常的发布与拉取请使用内置的 obsidian-git 插件（桌面端与移动端均可）。",
 		});
 
 		const settings = this.getSettings();
@@ -191,10 +189,8 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		// --- Actions ---
 		containerEl.createEl("h3", { text: "操作" });
-		this.addAction(containerEl, "触发 Setup", "创建博客仓库并配置全部 secrets 与部署。", "Setup 运行中...", this.actions.onSetup);
-		this.addAction(containerEl, "拉取最新", "用云端内容更新 Vault；本地独有文件保留，覆盖本地修改前会询问。", "拉取中...", this.actions.onPull);
-		this.addAction(containerEl, "推送发布", "将 Vault 变更提交到云端并等待博客部署；云端有更新时会询问。", "发布中...", this.actions.onPush, true);
-		this.addAction(containerEl, "触发部署", "不发布内容，仅通知博客仓库重新构建部署。", "触发中...", this.actions.onTrigger);
+		this.addAction(containerEl, "触发 Setup", "创建博客仓库并配置全部 secrets 与首次部署。", "Setup 运行中...", this.actions.onSetup);
+		this.addAction(containerEl, "触发部署", "通知博客仓库重新构建部署（发布请用 obsidian-git 的 Push）。", "触发中...", this.actions.onTrigger);
 	}
 
 	private createStatus(containerEl: HTMLElement): HTMLSpanElement {

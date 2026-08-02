@@ -829,17 +829,17 @@ var require_nacl_fast = __commonJS({
         for (var i = 0; i < 16; i++) o[i] = a[i] - b[i];
       }
       function M(o, a, b) {
-        var v, c, t0 = 0, t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, t6 = 0, t7 = 0, t8 = 0, t9 = 0, t10 = 0, t11 = 0, t12 = 0, t13 = 0, t14 = 0, t15 = 0, t16 = 0, t17 = 0, t18 = 0, t19 = 0, t20 = 0, t21 = 0, t22 = 0, t23 = 0, t24 = 0, t25 = 0, t26 = 0, t27 = 0, t28 = 0, t29 = 0, t30 = 0, b0 = b[0], b1 = b[1], b22 = b[2], b3 = b[3], b42 = b[4], b5 = b[5], b6 = b[6], b7 = b[7], b82 = b[8], b9 = b[9], b10 = b[10], b11 = b[11], b12 = b[12], b13 = b[13], b14 = b[14], b15 = b[15];
+        var v, c, t0 = 0, t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, t6 = 0, t7 = 0, t8 = 0, t9 = 0, t10 = 0, t11 = 0, t12 = 0, t13 = 0, t14 = 0, t15 = 0, t16 = 0, t17 = 0, t18 = 0, t19 = 0, t20 = 0, t21 = 0, t22 = 0, t23 = 0, t24 = 0, t25 = 0, t26 = 0, t27 = 0, t28 = 0, t29 = 0, t30 = 0, b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3], b4 = b[4], b5 = b[5], b6 = b[6], b7 = b[7], b8 = b[8], b9 = b[9], b10 = b[10], b11 = b[11], b12 = b[12], b13 = b[13], b14 = b[14], b15 = b[15];
         v = a[0];
         t0 += v * b0;
         t1 += v * b1;
-        t2 += v * b22;
+        t2 += v * b2;
         t3 += v * b3;
-        t4 += v * b42;
+        t4 += v * b4;
         t5 += v * b5;
         t6 += v * b6;
         t7 += v * b7;
-        t8 += v * b82;
+        t8 += v * b8;
         t9 += v * b9;
         t10 += v * b10;
         t11 += v * b11;
@@ -850,13 +850,13 @@ var require_nacl_fast = __commonJS({
         v = a[1];
         t1 += v * b0;
         t2 += v * b1;
-        t3 += v * b22;
+        t3 += v * b2;
         t4 += v * b3;
-        t5 += v * b42;
+        t5 += v * b4;
         t6 += v * b5;
         t7 += v * b6;
         t8 += v * b7;
-        t9 += v * b82;
+        t9 += v * b8;
         t10 += v * b9;
         t11 += v * b10;
         t12 += v * b11;
@@ -867,13 +867,13 @@ var require_nacl_fast = __commonJS({
         v = a[2];
         t2 += v * b0;
         t3 += v * b1;
-        t4 += v * b22;
+        t4 += v * b2;
         t5 += v * b3;
-        t6 += v * b42;
+        t6 += v * b4;
         t7 += v * b5;
         t8 += v * b6;
         t9 += v * b7;
-        t10 += v * b82;
+        t10 += v * b8;
         t11 += v * b9;
         t12 += v * b10;
         t13 += v * b11;
@@ -884,13 +884,13 @@ var require_nacl_fast = __commonJS({
         v = a[3];
         t3 += v * b0;
         t4 += v * b1;
-        t5 += v * b22;
+        t5 += v * b2;
         t6 += v * b3;
-        t7 += v * b42;
+        t7 += v * b4;
         t8 += v * b5;
         t9 += v * b6;
         t10 += v * b7;
-        t11 += v * b82;
+        t11 += v * b8;
         t12 += v * b9;
         t13 += v * b10;
         t14 += v * b11;
@@ -901,13 +901,13 @@ var require_nacl_fast = __commonJS({
         v = a[4];
         t4 += v * b0;
         t5 += v * b1;
-        t6 += v * b22;
+        t6 += v * b2;
         t7 += v * b3;
-        t8 += v * b42;
+        t8 += v * b4;
         t9 += v * b5;
         t10 += v * b6;
         t11 += v * b7;
-        t12 += v * b82;
+        t12 += v * b8;
         t13 += v * b9;
         t14 += v * b10;
         t15 += v * b11;
@@ -918,13 +918,13 @@ var require_nacl_fast = __commonJS({
         v = a[5];
         t5 += v * b0;
         t6 += v * b1;
-        t7 += v * b22;
+        t7 += v * b2;
         t8 += v * b3;
-        t9 += v * b42;
+        t9 += v * b4;
         t10 += v * b5;
         t11 += v * b6;
         t12 += v * b7;
-        t13 += v * b82;
+        t13 += v * b8;
         t14 += v * b9;
         t15 += v * b10;
         t16 += v * b11;
@@ -935,13 +935,13 @@ var require_nacl_fast = __commonJS({
         v = a[6];
         t6 += v * b0;
         t7 += v * b1;
-        t8 += v * b22;
+        t8 += v * b2;
         t9 += v * b3;
-        t10 += v * b42;
+        t10 += v * b4;
         t11 += v * b5;
         t12 += v * b6;
         t13 += v * b7;
-        t14 += v * b82;
+        t14 += v * b8;
         t15 += v * b9;
         t16 += v * b10;
         t17 += v * b11;
@@ -952,13 +952,13 @@ var require_nacl_fast = __commonJS({
         v = a[7];
         t7 += v * b0;
         t8 += v * b1;
-        t9 += v * b22;
+        t9 += v * b2;
         t10 += v * b3;
-        t11 += v * b42;
+        t11 += v * b4;
         t12 += v * b5;
         t13 += v * b6;
         t14 += v * b7;
-        t15 += v * b82;
+        t15 += v * b8;
         t16 += v * b9;
         t17 += v * b10;
         t18 += v * b11;
@@ -969,13 +969,13 @@ var require_nacl_fast = __commonJS({
         v = a[8];
         t8 += v * b0;
         t9 += v * b1;
-        t10 += v * b22;
+        t10 += v * b2;
         t11 += v * b3;
-        t12 += v * b42;
+        t12 += v * b4;
         t13 += v * b5;
         t14 += v * b6;
         t15 += v * b7;
-        t16 += v * b82;
+        t16 += v * b8;
         t17 += v * b9;
         t18 += v * b10;
         t19 += v * b11;
@@ -986,13 +986,13 @@ var require_nacl_fast = __commonJS({
         v = a[9];
         t9 += v * b0;
         t10 += v * b1;
-        t11 += v * b22;
+        t11 += v * b2;
         t12 += v * b3;
-        t13 += v * b42;
+        t13 += v * b4;
         t14 += v * b5;
         t15 += v * b6;
         t16 += v * b7;
-        t17 += v * b82;
+        t17 += v * b8;
         t18 += v * b9;
         t19 += v * b10;
         t20 += v * b11;
@@ -1003,13 +1003,13 @@ var require_nacl_fast = __commonJS({
         v = a[10];
         t10 += v * b0;
         t11 += v * b1;
-        t12 += v * b22;
+        t12 += v * b2;
         t13 += v * b3;
-        t14 += v * b42;
+        t14 += v * b4;
         t15 += v * b5;
         t16 += v * b6;
         t17 += v * b7;
-        t18 += v * b82;
+        t18 += v * b8;
         t19 += v * b9;
         t20 += v * b10;
         t21 += v * b11;
@@ -1020,13 +1020,13 @@ var require_nacl_fast = __commonJS({
         v = a[11];
         t11 += v * b0;
         t12 += v * b1;
-        t13 += v * b22;
+        t13 += v * b2;
         t14 += v * b3;
-        t15 += v * b42;
+        t15 += v * b4;
         t16 += v * b5;
         t17 += v * b6;
         t18 += v * b7;
-        t19 += v * b82;
+        t19 += v * b8;
         t20 += v * b9;
         t21 += v * b10;
         t22 += v * b11;
@@ -1037,13 +1037,13 @@ var require_nacl_fast = __commonJS({
         v = a[12];
         t12 += v * b0;
         t13 += v * b1;
-        t14 += v * b22;
+        t14 += v * b2;
         t15 += v * b3;
-        t16 += v * b42;
+        t16 += v * b4;
         t17 += v * b5;
         t18 += v * b6;
         t19 += v * b7;
-        t20 += v * b82;
+        t20 += v * b8;
         t21 += v * b9;
         t22 += v * b10;
         t23 += v * b11;
@@ -1054,13 +1054,13 @@ var require_nacl_fast = __commonJS({
         v = a[13];
         t13 += v * b0;
         t14 += v * b1;
-        t15 += v * b22;
+        t15 += v * b2;
         t16 += v * b3;
-        t17 += v * b42;
+        t17 += v * b4;
         t18 += v * b5;
         t19 += v * b6;
         t20 += v * b7;
-        t21 += v * b82;
+        t21 += v * b8;
         t22 += v * b9;
         t23 += v * b10;
         t24 += v * b11;
@@ -1071,13 +1071,13 @@ var require_nacl_fast = __commonJS({
         v = a[14];
         t14 += v * b0;
         t15 += v * b1;
-        t16 += v * b22;
+        t16 += v * b2;
         t17 += v * b3;
-        t18 += v * b42;
+        t18 += v * b4;
         t19 += v * b5;
         t20 += v * b6;
         t21 += v * b7;
-        t22 += v * b82;
+        t22 += v * b8;
         t23 += v * b9;
         t24 += v * b10;
         t25 += v * b11;
@@ -1088,13 +1088,13 @@ var require_nacl_fast = __commonJS({
         v = a[15];
         t15 += v * b0;
         t16 += v * b1;
-        t17 += v * b22;
+        t17 += v * b2;
         t18 += v * b3;
-        t19 += v * b42;
+        t19 += v * b4;
         t20 += v * b5;
         t21 += v * b6;
         t22 += v * b7;
-        t23 += v * b82;
+        t23 += v * b8;
         t24 += v * b9;
         t25 += v * b10;
         t26 += v * b11;
@@ -2237,22 +2237,22 @@ var require_nacl_fast = __commonJS({
         randombytes = fn;
       };
       (function() {
-        var crypto2 = typeof self !== "undefined" ? self.crypto || self.msCrypto : null;
-        if (crypto2 && crypto2.getRandomValues) {
+        var crypto = typeof self !== "undefined" ? self.crypto || self.msCrypto : null;
+        if (crypto && crypto.getRandomValues) {
           var QUOTA = 65536;
           nacl2.setPRNG(function(x, n) {
             var i, v = new Uint8Array(n);
             for (i = 0; i < n; i += QUOTA) {
-              crypto2.getRandomValues(v.subarray(i, i + Math.min(n - i, QUOTA)));
+              crypto.getRandomValues(v.subarray(i, i + Math.min(n - i, QUOTA)));
             }
             for (i = 0; i < n; i++) x[i] = v[i];
             cleanup(v);
           });
         } else if (typeof require !== "undefined") {
-          crypto2 = require_crypto();
-          if (crypto2 && crypto2.randomBytes) {
+          crypto = require_crypto();
+          if (crypto && crypto.randomBytes) {
             nacl2.setPRNG(function(x, n) {
-              var i, v = crypto2.randomBytes(n);
+              var i, v = crypto.randomBytes(n);
               for (i = 0; i < n; i++) x[i] = v[i];
               cleanup(v);
             });
@@ -2297,7 +2297,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.actionButtons = [];
     containerEl.createEl("h2", { text: "VitePress Butterfly \u53D1\u5E03" });
     containerEl.createEl("p", {
-      text: "\u5F53\u524D Vault \u5C31\u662F\u6587\u7AE0\u4ED3\u5E93\u3002\u4F9D\u6B21\u5B8C\u6210\u4E0B\u65B9\u56DB\u6B65\u68C0\u6D4B\u540E\u5373\u53EF\u53D1\u5E03\uFF0C\u65E0\u9700\u5B89\u88C5 Git\u3002"
+      text: "\u672C\u63D2\u4EF6\u8D1F\u8D23\u521D\u59CB\u5316\u4E0E\u90E8\u7F72\uFF1A\u521B\u5EFA\u4ED3\u5E93\u3001\u914D\u7F6E secrets\u3001\u89E6\u53D1 Setup\u3002\u65E5\u5E38\u7684\u53D1\u5E03\u4E0E\u62C9\u53D6\u8BF7\u4F7F\u7528\u5185\u7F6E\u7684 obsidian-git \u63D2\u4EF6\uFF08\u684C\u9762\u7AEF\u4E0E\u79FB\u52A8\u7AEF\u5747\u53EF\uFF09\u3002"
     });
     const settings = this.getSettings();
     const patStatus = this.createStatus(containerEl);
@@ -2368,10 +2368,8 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       });
     });
     containerEl.createEl("h3", { text: "\u64CD\u4F5C" });
-    this.addAction(containerEl, "\u89E6\u53D1 Setup", "\u521B\u5EFA\u535A\u5BA2\u4ED3\u5E93\u5E76\u914D\u7F6E\u5168\u90E8 secrets \u4E0E\u90E8\u7F72\u3002", "Setup \u8FD0\u884C\u4E2D...", this.actions.onSetup);
-    this.addAction(containerEl, "\u62C9\u53D6\u6700\u65B0", "\u7528\u4E91\u7AEF\u5185\u5BB9\u66F4\u65B0 Vault\uFF1B\u672C\u5730\u72EC\u6709\u6587\u4EF6\u4FDD\u7559\uFF0C\u8986\u76D6\u672C\u5730\u4FEE\u6539\u524D\u4F1A\u8BE2\u95EE\u3002", "\u62C9\u53D6\u4E2D...", this.actions.onPull);
-    this.addAction(containerEl, "\u63A8\u9001\u53D1\u5E03", "\u5C06 Vault \u53D8\u66F4\u63D0\u4EA4\u5230\u4E91\u7AEF\u5E76\u7B49\u5F85\u535A\u5BA2\u90E8\u7F72\uFF1B\u4E91\u7AEF\u6709\u66F4\u65B0\u65F6\u4F1A\u8BE2\u95EE\u3002", "\u53D1\u5E03\u4E2D...", this.actions.onPush, true);
-    this.addAction(containerEl, "\u89E6\u53D1\u90E8\u7F72", "\u4E0D\u53D1\u5E03\u5185\u5BB9\uFF0C\u4EC5\u901A\u77E5\u535A\u5BA2\u4ED3\u5E93\u91CD\u65B0\u6784\u5EFA\u90E8\u7F72\u3002", "\u89E6\u53D1\u4E2D...", this.actions.onTrigger);
+    this.addAction(containerEl, "\u89E6\u53D1 Setup", "\u521B\u5EFA\u535A\u5BA2\u4ED3\u5E93\u5E76\u914D\u7F6E\u5168\u90E8 secrets \u4E0E\u9996\u6B21\u90E8\u7F72\u3002", "Setup \u8FD0\u884C\u4E2D...", this.actions.onSetup);
+    this.addAction(containerEl, "\u89E6\u53D1\u90E8\u7F72", "\u901A\u77E5\u535A\u5BA2\u4ED3\u5E93\u91CD\u65B0\u6784\u5EFA\u90E8\u7F72\uFF08\u53D1\u5E03\u8BF7\u7528 obsidian-git \u7684 Push\uFF09\u3002", "\u89E6\u53D1\u4E2D...", this.actions.onTrigger);
   }
   createStatus(containerEl) {
     const span = containerEl.createSpan({ cls: "vitepress-butterfly-check-status" });
@@ -3099,29 +3097,6 @@ var _BLAKE2b = class extends _BLAKE2 {
 };
 var blake2b = /* @__PURE__ */ createHasher((opts) => new _BLAKE2b(opts));
 
-// src/utils/git.ts
-async function gitBlobSha1(content) {
-  const bytes = toUint8Array(content);
-  const header = new TextEncoder().encode(`blob ${bytes.byteLength}\0`);
-  const blob = new Uint8Array(header.byteLength + bytes.byteLength);
-  blob.set(header);
-  blob.set(bytes, header.byteLength);
-  const digest = await crypto.subtle.digest("SHA-1", blob);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-function bytesToBase64(content) {
-  const bytes = toUint8Array(content);
-  let binary = "";
-  const chunkSize = 32768;
-  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-function toUint8Array(content) {
-  return content instanceof Uint8Array ? content : new Uint8Array(content);
-}
-
 // src/utils/secret.ts
 async function encryptGitHubSecret(value, publicKey) {
   if (!value) {
@@ -3147,6 +3122,15 @@ function base64ToBytes(input) {
     bytes[index] = binary.charCodeAt(index);
   }
   return bytes;
+}
+function bytesToBase64(content) {
+  const bytes = content instanceof Uint8Array ? content : new Uint8Array(content);
+  let binary = "";
+  const chunkSize = 32768;
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 // src/services/github.ts
@@ -3218,84 +3202,6 @@ var GitHubClient = class {
     );
     return this.toRepository(result);
   }
-  async getRef(repository, ref = "main") {
-    const result = await this.request(
-      `${this.repositoryPath(repository)}/git/ref/${encodeRef(ref)}`
-    );
-    return {
-      ref: result.ref,
-      sha: result.object.sha
-    };
-  }
-  async getCommit(repository, sha) {
-    const result = await this.request(
-      `${this.repositoryPath(repository)}/git/commits/${encodeURIComponent(sha)}`
-    );
-    return {
-      sha: result.sha,
-      tree: { sha: result.tree.sha }
-    };
-  }
-  async getTree(repository, treeSha, recursive = true) {
-    const result = await this.request(
-      `${this.repositoryPath(repository)}/git/trees/${encodeURIComponent(treeSha)}`,
-      { query: recursive ? { recursive: 1 } : void 0 }
-    );
-    return {
-      sha: result.sha,
-      entries: result.tree,
-      truncated: result.truncated ?? false
-    };
-  }
-  async createBlob(repository, content, encoding = "utf-8") {
-    const result = await this.request(
-      `${this.repositoryPath(repository)}/git/blobs`,
-      {
-        method: "POST",
-        body: { content, encoding }
-      }
-    );
-    return { sha: result.sha };
-  }
-  async createTree(repository, entries, baseTree) {
-    const result = await this.request(
-      `${this.repositoryPath(repository)}/git/trees`,
-      {
-        method: "POST",
-        body: {
-          base_tree: baseTree,
-          tree: entries
-        }
-      }
-    );
-    return {
-      sha: result.sha,
-      entries: result.tree,
-      truncated: result.truncated ?? false
-    };
-  }
-  async createCommit(repository, message, tree, parents) {
-    const result = await this.request(
-      `${this.repositoryPath(repository)}/git/commits`,
-      {
-        method: "POST",
-        body: { message, tree, parents }
-      }
-    );
-    return {
-      sha: result.sha,
-      tree: { sha: result.tree.sha }
-    };
-  }
-  async updateRef(repository, ref, sha, force = false) {
-    await this.request(
-      `${this.repositoryPath(repository)}/git/refs/${encodeRef(ref)}`,
-      {
-        method: "PATCH",
-        body: { sha, force }
-      }
-    );
-  }
   async listSecrets(repository) {
     const result = await this.request(
       `${this.repositoryPath(repository)}/actions/secrets`
@@ -3330,30 +3236,6 @@ var GitHubClient = class {
       `${this.repositoryPath(repository)}/actions/secrets/${encodeURIComponent(name)}`,
       { method: "DELETE" }
     );
-  }
-  /**
-   * Downloads the repository archive as a zipball. Follows GitHub's redirect
-   * to codeload; the signed URL needs no further authorization.
-   */
-  async downloadZipball(repository, ref = "main") {
-    const url = `${API_URL}${this.repositoryPath(repository)}/zipball/${encodeURIComponent(ref)}`;
-    const response = await (0, import_obsidian2.requestUrl)({
-      url,
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${this.token}`,
-        "X-GitHub-Api-Version": API_VERSION
-      },
-      throw: false
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw new GitHubApiError(
-        apiMessage(response.text, response.status),
-        response.status,
-        url
-      );
-    }
-    return response.arrayBuffer;
   }
   async dispatchWorkflow(repository, workflow, ref = "main", inputs = {}) {
     await this.request(
@@ -3464,10 +3346,6 @@ var GitHubClient = class {
     };
   }
 };
-function encodeRef(ref) {
-  const normalized = ref.startsWith("refs/") ? ref.slice("refs/".length) : /^(heads|tags)\//.test(ref) ? ref : `heads/${ref}`;
-  return normalized.split("/").map(encodeURIComponent).join("/");
-}
 function stringifyInputs(inputs) {
   return Object.fromEntries(
     Object.entries(inputs).map(([name, value]) => [name, String(value)])
@@ -3509,846 +3387,12 @@ function apiMessage(body, status) {
   return `GitHub API request failed with status ${status}.`;
 }
 
-// src/utils/paths.ts
-function isExcludedPath(path) {
-  const segments = path.split("/");
-  if (segments.some((segment) => segment === ".git" || segment === ".trash" || segment === "node_modules")) {
-    return true;
-  }
-  if (path === ".obsidian/workspace.json") {
-    return true;
-  }
-  if (path === ".obsidian/cache" || path.startsWith(".obsidian/cache/")) {
-    return true;
-  }
-  if (segments.length >= 3 && segments[0] === ".obsidian" && segments[1] === "plugins" && segments[segments.length - 1] === "data.json") {
-    return true;
-  }
-  return false;
-}
-
-// src/services/publisher.ts
-var MAIN_REF = "heads/main";
-var DEFAULT_COMMIT_MESSAGE = "Publish from Obsidian";
-async function publishVault(options) {
-  const previousPaths = new Set(options.previouslyPublishedPaths);
-  const vaultFiles = await readVaultFiles(options.vault);
-  const publishedPaths = vaultFiles.map((file) => file.path);
-  const publishedPathSet = new Set(publishedPaths);
-  const ref = await options.client.getRef(options.repository, MAIN_REF);
-  const commit = await options.client.getCommit(options.repository, ref.sha);
-  const tree = await options.client.getTree(
-    options.repository,
-    commit.tree.sha
-  );
-  const remoteBlobs = /* @__PURE__ */ new Map();
-  for (const entry of tree.entries) {
-    if (entry.type === "blob") {
-      remoteBlobs.set(entry.path, { sha: entry.sha, mode: entry.mode });
-    }
-  }
-  const entries = [];
-  for (const file of vaultFiles) {
-    if (remoteBlobs.get(file.path)?.sha === file.sha) {
-      continue;
-    }
-    const blob = await options.client.createBlob(
-      options.repository,
-      bytesToBase64(file.content),
-      "base64"
-    );
-    if (blob.sha !== file.sha) {
-      throw new Error(`Git blob SHA mismatch for "${file.path}".`);
-    }
-    entries.push({
-      path: file.path,
-      mode: "100644",
-      type: "blob",
-      sha: blob.sha
-    });
-  }
-  const deletedPaths = [...previousPaths].filter((path) => !publishedPathSet.has(path) && remoteBlobs.has(path)).sort();
-  for (const path of deletedPaths) {
-    entries.push({ path, mode: "100644", type: "blob", sha: null });
-  }
-  if (entries.length === 0) {
-    return {
-      changed: false,
-      commitSha: null,
-      publishedPaths,
-      deletedPaths: []
-    };
-  }
-  const nextTree = await options.client.createTree(
-    options.repository,
-    entries,
-    commit.tree.sha
-  );
-  const nextCommit = await options.client.createCommit(
-    options.repository,
-    options.message?.trim() || DEFAULT_COMMIT_MESSAGE,
-    nextTree.sha,
-    [ref.sha]
-  );
-  await options.client.updateRef(
-    options.repository,
-    MAIN_REF,
-    nextCommit.sha,
-    options.force ?? false
-  );
-  return {
-    changed: true,
-    commitSha: nextCommit.sha,
-    publishedPaths,
-    deletedPaths
-  };
-}
-async function readVaultFiles(vault) {
-  const files = [];
-  for (const file of vault.getFiles()) {
-    if (isExcludedPath(file.path)) {
-      continue;
-    }
-    const content = await vault.readBinary(file);
-    files.push({
-      path: file.path,
-      content,
-      sha: await gitBlobSha1(content)
-    });
-  }
-  return files.sort((left, right) => left.path.localeCompare(right.path));
-}
-
-// node_modules/.pnpm/fflate@0.8.3/node_modules/fflate/esm/browser.js
-var ch2 = {};
-var wk = (function(c, id, msg, transfer, cb) {
-  var w = new Worker(ch2[id] || (ch2[id] = URL.createObjectURL(new Blob([
-    c + ';addEventListener("error",function(e){e=e.error;postMessage({$e$:[e.message,e.code,e.stack]})})'
-  ], { type: "text/javascript" }))));
-  w.onmessage = function(e) {
-    var d = e.data, ed = d.$e$;
-    if (ed) {
-      var err2 = new Error(ed[0]);
-      err2["code"] = ed[1];
-      err2.stack = ed[2];
-      cb(err2, null);
-    } else
-      cb(null, d);
-  };
-  w.postMessage(msg, transfer);
-  return w;
-});
-var u8 = Uint8Array;
-var u16 = Uint16Array;
-var i32 = Int32Array;
-var fleb = new u8([
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  1,
-  1,
-  1,
-  1,
-  2,
-  2,
-  2,
-  2,
-  3,
-  3,
-  3,
-  3,
-  4,
-  4,
-  4,
-  4,
-  5,
-  5,
-  5,
-  5,
-  0,
-  /* unused */
-  0,
-  0,
-  /* impossible */
-  0
-]);
-var fdeb = new u8([
-  0,
-  0,
-  0,
-  0,
-  1,
-  1,
-  2,
-  2,
-  3,
-  3,
-  4,
-  4,
-  5,
-  5,
-  6,
-  6,
-  7,
-  7,
-  8,
-  8,
-  9,
-  9,
-  10,
-  10,
-  11,
-  11,
-  12,
-  12,
-  13,
-  13,
-  /* unused */
-  0,
-  0
-]);
-var clim = new u8([16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]);
-var freb = function(eb, start) {
-  var b = new u16(31);
-  for (var i = 0; i < 31; ++i) {
-    b[i] = start += 1 << eb[i - 1];
-  }
-  var r = new i32(b[30]);
-  for (var i = 1; i < 30; ++i) {
-    for (var j = b[i]; j < b[i + 1]; ++j) {
-      r[j] = j - b[i] << 5 | i;
-    }
-  }
-  return { b, r };
-};
-var _a = freb(fleb, 2);
-var fl = _a.b;
-var revfl = _a.r;
-fl[28] = 258, revfl[258] = 28;
-var _b = freb(fdeb, 0);
-var fd = _b.b;
-var revfd = _b.r;
-var rev = new u16(32768);
-for (i = 0; i < 32768; ++i) {
-  x = (i & 43690) >> 1 | (i & 21845) << 1;
-  x = (x & 52428) >> 2 | (x & 13107) << 2;
-  x = (x & 61680) >> 4 | (x & 3855) << 4;
-  rev[i] = ((x & 65280) >> 8 | (x & 255) << 8) >> 1;
-}
-var x;
-var i;
-var hMap = (function(cd, mb, r) {
-  var s = cd.length;
-  var i = 0;
-  var l = new u16(mb);
-  for (; i < s; ++i) {
-    if (cd[i])
-      ++l[cd[i] - 1];
-  }
-  var le = new u16(mb);
-  for (i = 1; i < mb; ++i) {
-    le[i] = le[i - 1] + l[i - 1] << 1;
-  }
-  var co;
-  if (r) {
-    co = new u16(1 << mb);
-    var rvb = 15 - mb;
-    for (i = 0; i < s; ++i) {
-      if (cd[i]) {
-        var sv = i << 4 | cd[i];
-        var r_1 = mb - cd[i];
-        var v = le[cd[i] - 1]++ << r_1;
-        for (var m = v | (1 << r_1) - 1; v <= m; ++v) {
-          co[rev[v] >> rvb] = sv;
-        }
-      }
-    }
-  } else {
-    co = new u16(s);
-    for (i = 0; i < s; ++i) {
-      if (cd[i]) {
-        co[i] = rev[le[cd[i] - 1]++] >> 15 - cd[i];
-      }
-    }
-  }
-  return co;
-});
-var flt = new u8(288);
-for (i = 0; i < 144; ++i)
-  flt[i] = 8;
-var i;
-for (i = 144; i < 256; ++i)
-  flt[i] = 9;
-var i;
-for (i = 256; i < 280; ++i)
-  flt[i] = 7;
-var i;
-for (i = 280; i < 288; ++i)
-  flt[i] = 8;
-var i;
-var fdt = new u8(32);
-for (i = 0; i < 32; ++i)
-  fdt[i] = 5;
-var i;
-var flrm = /* @__PURE__ */ hMap(flt, 9, 1);
-var fdrm = /* @__PURE__ */ hMap(fdt, 5, 1);
-var max = function(a) {
-  var m = a[0];
-  for (var i = 1; i < a.length; ++i) {
-    if (a[i] > m)
-      m = a[i];
-  }
-  return m;
-};
-var bits = function(d, p, m) {
-  var o = p / 8 | 0;
-  return (d[o] | d[o + 1] << 8) >> (p & 7) & m;
-};
-var bits16 = function(d, p) {
-  var o = p / 8 | 0;
-  return (d[o] | d[o + 1] << 8 | d[o + 2] << 16) >> (p & 7);
-};
-var shft = function(p) {
-  return (p + 7) / 8 | 0;
-};
-var slc = function(v, s, e) {
-  if (s == null || s < 0)
-    s = 0;
-  if (e == null || e > v.length)
-    e = v.length;
-  return new u8(v.subarray(s, e));
-};
-var ec = [
-  "unexpected EOF",
-  "invalid block type",
-  "invalid length/literal",
-  "invalid distance",
-  "stream finished",
-  "no stream handler",
-  ,
-  // determined by compression function
-  "no callback",
-  "invalid UTF-8 data",
-  "extra field too long",
-  "date not in range 1980-2099",
-  "filename too long",
-  "stream finishing",
-  "invalid zip data"
-  // determined by unknown compression method
-];
-var err = function(ind, msg, nt) {
-  var e = new Error(msg || ec[ind]);
-  e.code = ind;
-  if (Error.captureStackTrace)
-    Error.captureStackTrace(e, err);
-  if (!nt)
-    throw e;
-  return e;
-};
-var inflt = function(dat, st, buf, dict) {
-  var sl = dat.length, dl = dict ? dict.length : 0;
-  if (!sl || st.f && !st.l)
-    return buf || new u8(0);
-  var noBuf = !buf;
-  var resize = noBuf || st.i != 2;
-  var noSt = st.i;
-  if (noBuf)
-    buf = new u8(sl * 3);
-  var cbuf = function(l2) {
-    var bl = buf.length;
-    if (l2 > bl) {
-      var nbuf = new u8(Math.max(bl * 2, l2));
-      nbuf.set(buf);
-      buf = nbuf;
-    }
-  };
-  var final = st.f || 0, pos = st.p || 0, bt = st.b || 0, lm = st.l, dm = st.d, lbt = st.m, dbt = st.n;
-  var tbts = sl * 8;
-  do {
-    if (!lm) {
-      final = bits(dat, pos, 1);
-      var type = bits(dat, pos + 1, 3);
-      pos += 3;
-      if (!type) {
-        var s = shft(pos) + 4, l = dat[s - 4] | dat[s - 3] << 8, t = s + l;
-        if (t > sl) {
-          if (noSt)
-            err(0);
-          break;
-        }
-        if (resize)
-          cbuf(bt + l);
-        buf.set(dat.subarray(s, t), bt);
-        st.b = bt += l, st.p = pos = t * 8, st.f = final;
-        continue;
-      } else if (type == 1)
-        lm = flrm, dm = fdrm, lbt = 9, dbt = 5;
-      else if (type == 2) {
-        var hLit = bits(dat, pos, 31) + 257, hcLen = bits(dat, pos + 10, 15) + 4;
-        var tl = hLit + bits(dat, pos + 5, 31) + 1;
-        pos += 14;
-        var ldt = new u8(tl);
-        var clt = new u8(19);
-        for (var i = 0; i < hcLen; ++i) {
-          clt[clim[i]] = bits(dat, pos + i * 3, 7);
-        }
-        pos += hcLen * 3;
-        var clb = max(clt), clbmsk = (1 << clb) - 1;
-        var clm = hMap(clt, clb, 1);
-        for (var i = 0; i < tl; ) {
-          var r = clm[bits(dat, pos, clbmsk)];
-          pos += r & 15;
-          var s = r >> 4;
-          if (s < 16) {
-            ldt[i++] = s;
-          } else {
-            var c = 0, n = 0;
-            if (s == 16)
-              n = 3 + bits(dat, pos, 3), pos += 2, c = ldt[i - 1];
-            else if (s == 17)
-              n = 3 + bits(dat, pos, 7), pos += 3;
-            else if (s == 18)
-              n = 11 + bits(dat, pos, 127), pos += 7;
-            while (n--)
-              ldt[i++] = c;
-          }
-        }
-        var lt = ldt.subarray(0, hLit), dt = ldt.subarray(hLit);
-        lbt = max(lt);
-        dbt = max(dt);
-        lm = hMap(lt, lbt, 1);
-        dm = hMap(dt, dbt, 1);
-      } else
-        err(1);
-      if (pos > tbts) {
-        if (noSt)
-          err(0);
-        break;
-      }
-    }
-    if (resize)
-      cbuf(bt + 131072);
-    var lms = (1 << lbt) - 1, dms = (1 << dbt) - 1;
-    var lpos = pos;
-    for (; ; lpos = pos) {
-      var c = lm[bits16(dat, pos) & lms], sym = c >> 4;
-      pos += c & 15;
-      if (pos > tbts) {
-        if (noSt)
-          err(0);
-        break;
-      }
-      if (!c)
-        err(2);
-      if (sym < 256)
-        buf[bt++] = sym;
-      else if (sym == 256) {
-        lpos = pos, lm = null;
-        break;
-      } else {
-        var add2 = sym - 254;
-        if (sym > 264) {
-          var i = sym - 257, b = fleb[i];
-          add2 = bits(dat, pos, (1 << b) - 1) + fl[i];
-          pos += b;
-        }
-        var d = dm[bits16(dat, pos) & dms], dsym = d >> 4;
-        if (!d)
-          err(3);
-        pos += d & 15;
-        var dt = fd[dsym];
-        if (dsym > 3) {
-          var b = fdeb[dsym];
-          dt += bits16(dat, pos) & (1 << b) - 1, pos += b;
-        }
-        if (pos > tbts) {
-          if (noSt)
-            err(0);
-          break;
-        }
-        if (resize)
-          cbuf(bt + 131072);
-        var end = bt + add2;
-        if (bt < dt) {
-          var shift = dl - dt, dend = Math.min(dt, end);
-          if (shift + bt < 0)
-            err(3);
-          for (; bt < dend; ++bt)
-            buf[bt] = dict[shift + bt];
-        }
-        for (; bt < end; ++bt)
-          buf[bt] = buf[bt - dt];
-      }
-    }
-    st.l = lm, st.p = lpos, st.b = bt, st.f = final;
-    if (lm)
-      final = 1, st.m = lbt, st.d = dm, st.n = dbt;
-  } while (!final);
-  return bt != buf.length && noBuf ? slc(buf, 0, bt) : buf.subarray(0, bt);
-};
-var et = /* @__PURE__ */ new u8(0);
-var mrg = function(a, b) {
-  var o = {};
-  for (var k in a)
-    o[k] = a[k];
-  for (var k in b)
-    o[k] = b[k];
-  return o;
-};
-var wcln = function(fn, fnStr, td2) {
-  var dt = fn();
-  var st = fn.toString();
-  var ks = st.slice(st.indexOf("[") + 1, st.lastIndexOf("]")).replace(/\s+/g, "").split(",");
-  for (var i = 0; i < dt.length; ++i) {
-    var v = dt[i], k = ks[i];
-    if (typeof v == "function") {
-      fnStr += ";" + k + "=";
-      var st_1 = v.toString();
-      if (v.prototype) {
-        if (st_1.indexOf("[native code]") != -1) {
-          var spInd = st_1.indexOf(" ", 8) + 1;
-          fnStr += st_1.slice(spInd, st_1.indexOf("(", spInd));
-        } else {
-          fnStr += st_1;
-          for (var t in v.prototype)
-            fnStr += ";" + k + ".prototype." + t + "=" + v.prototype[t].toString();
-        }
-      } else
-        fnStr += st_1;
-    } else
-      td2[k] = v;
-  }
-  return fnStr;
-};
-var ch = [];
-var cbfs = function(v) {
-  var tl = [];
-  for (var k in v) {
-    if (v[k].buffer) {
-      tl.push((v[k] = new v[k].constructor(v[k])).buffer);
-    }
-  }
-  return tl;
-};
-var wrkr = function(fns, init, id, cb) {
-  if (!ch[id]) {
-    var fnStr = "", td_1 = {}, m = fns.length - 1;
-    for (var i = 0; i < m; ++i)
-      fnStr = wcln(fns[i], fnStr, td_1);
-    ch[id] = { c: wcln(fns[m], fnStr, td_1), e: td_1 };
-  }
-  var td2 = mrg({}, ch[id].e);
-  return wk(ch[id].c + ";onmessage=function(e){for(var k in e.data)self[k]=e.data[k];onmessage=" + init.toString() + "}", id, td2, cbfs(td2), cb);
-};
-var bInflt = function() {
-  return [u8, u16, i32, fleb, fdeb, clim, fl, fd, flrm, fdrm, rev, ec, hMap, max, bits, bits16, shft, slc, err, inflt, inflateSync, pbf, gopt];
-};
-var pbf = function(msg) {
-  return postMessage(msg, [msg.buffer]);
-};
-var gopt = function(o) {
-  return o && {
-    out: o.size && new u8(o.size),
-    dictionary: o.dictionary
-  };
-};
-var cbify = function(dat, opts, fns, init, id, cb) {
-  var w = wrkr(fns, init, id, function(err2, dat2) {
-    w.terminate();
-    cb(err2, dat2);
-  });
-  w.postMessage([dat, opts], opts.consume ? [dat.buffer] : []);
-  return function() {
-    w.terminate();
-  };
-};
-var b2 = function(d, b) {
-  return d[b] | d[b + 1] << 8;
-};
-var b4 = function(d, b) {
-  return (d[b] | d[b + 1] << 8 | d[b + 2] << 16 | d[b + 3] << 24) >>> 0;
-};
-var b8 = function(d, b) {
-  return b4(d, b) + b4(d, b + 4) * 4294967296;
-};
-function inflate(data, opts, cb) {
-  if (!cb)
-    cb = opts, opts = {};
-  if (typeof cb != "function")
-    err(7);
-  return cbify(data, opts, [
-    bInflt
-  ], function(ev) {
-    return pbf(inflateSync(ev.data[0], gopt(ev.data[1])));
-  }, 1, cb);
-}
-function inflateSync(data, opts) {
-  return inflt(data, { i: 2 }, opts && opts.out, opts && opts.dictionary);
-}
-var td = typeof TextDecoder != "undefined" && /* @__PURE__ */ new TextDecoder();
-var tds = 0;
-try {
-  td.decode(et, { stream: true });
-  tds = 1;
-} catch (e) {
-}
-var dutf8 = function(d) {
-  for (var r = "", i = 0; ; ) {
-    var c = d[i++];
-    var eb = (c > 127) + (c > 223) + (c > 239);
-    if (i + eb > d.length)
-      return { s: r, r: slc(d, i - 1) };
-    if (!eb)
-      r += String.fromCharCode(c);
-    else if (eb == 3) {
-      c = ((c & 15) << 18 | (d[i++] & 63) << 12 | (d[i++] & 63) << 6 | d[i++] & 63) - 65536, r += String.fromCharCode(55296 | c >> 10, 56320 | c & 1023);
-    } else if (eb & 1)
-      r += String.fromCharCode((c & 31) << 6 | d[i++] & 63);
-    else
-      r += String.fromCharCode((c & 15) << 12 | (d[i++] & 63) << 6 | d[i++] & 63);
-  }
-};
-function strFromU8(dat, latin1) {
-  if (latin1) {
-    var r = "";
-    for (var i = 0; i < dat.length; i += 16384)
-      r += String.fromCharCode.apply(null, dat.subarray(i, i + 16384));
-    return r;
-  } else if (td) {
-    return td.decode(dat);
-  } else {
-    var _a2 = dutf8(dat), s = _a2.s, r = _a2.r;
-    if (r.length)
-      err(8);
-    return s;
-  }
-}
-var slzh = function(d, b) {
-  return b + 30 + b2(d, b + 26) + b2(d, b + 28);
-};
-var zh = function(d, b, z) {
-  var fnl = b2(d, b + 28), efl = b2(d, b + 30), fn = strFromU8(d.subarray(b + 46, b + 46 + fnl), !(b2(d, b + 8) & 2048)), es = b + 46 + fnl;
-  var _a2 = z64hs(d, es, efl, z, b4(d, b + 20), b4(d, b + 24), b4(d, b + 42)), sc = _a2[0], su = _a2[1], off = _a2[2];
-  return [b2(d, b + 10), sc, su, fn, es + efl + b2(d, b + 32), off];
-};
-var z64hs = function(d, b, l, z, sc, su, off) {
-  var nsc = sc == 4294967295, nsu = su == 4294967295, noff = off == 4294967295, e = b + l;
-  var nf = nsc + nsu + noff;
-  if (z && nf) {
-    for (; b + 4 < e; b += 4 + b2(d, b + 2)) {
-      if (b2(d, b) == 1) {
-        return [
-          nsc ? b8(d, b + 4 + 8 * nsu) : sc,
-          nsu ? b8(d, b + 4) : su,
-          noff ? b8(d, b + 4 + 8 * (nsu + nsc)) : off,
-          1
-        ];
-      }
-    }
-    if (z < 2)
-      err(13);
-  }
-  return [sc, su, off, 0];
-};
-var mt = typeof queueMicrotask == "function" ? queueMicrotask : typeof setTimeout == "function" ? setTimeout : function(fn) {
-  fn();
-};
-function unzip(data, opts, cb) {
-  if (!cb)
-    cb = opts, opts = {};
-  if (typeof cb != "function")
-    err(7);
-  var term = [];
-  var tAll = function() {
-    for (var i2 = 0; i2 < term.length; ++i2)
-      term[i2]();
-  };
-  var files = {};
-  var cbd = function(a, b) {
-    mt(function() {
-      cb(a, b);
-    });
-  };
-  mt(function() {
-    cbd = cb;
-  });
-  var e = data.length - 22;
-  for (; b4(data, e) != 101010256; --e) {
-    if (!e || data.length - e > 65558) {
-      cbd(err(13, 0, 1), null);
-      return tAll;
-    }
-  }
-  ;
-  var lft = b2(data, e + 8);
-  if (lft) {
-    var c = lft;
-    var o = b4(data, e + 16);
-    var z = b4(data, e - 20) == 117853008;
-    if (z) {
-      var ze = b4(data, e - 12);
-      z = b4(data, ze) == 101075792;
-      if (z) {
-        c = lft = b4(data, ze + 32);
-        o = b4(data, ze + 48);
-      }
-    }
-    var fltr = opts && opts.filter;
-    var _loop_3 = function(i2) {
-      var _a2 = zh(data, o, z), c_1 = _a2[0], sc = _a2[1], su = _a2[2], fn = _a2[3], no = _a2[4], off = _a2[5], b = slzh(data, off);
-      o = no;
-      var cbl = function(e2, d) {
-        if (e2) {
-          tAll();
-          cbd(e2, null);
-        } else {
-          if (d)
-            files[fn] = d;
-          if (!--lft)
-            cbd(null, files);
-        }
-      };
-      if (!fltr || fltr({
-        name: fn,
-        size: sc,
-        originalSize: su,
-        compression: c_1
-      })) {
-        if (!c_1)
-          cbl(null, slc(data, b, b + sc));
-        else if (c_1 == 8) {
-          var infl = data.subarray(b, b + sc);
-          if (su < 524288 || sc > 0.8 * su) {
-            try {
-              cbl(null, inflateSync(infl, { out: new u8(su) }));
-            } catch (e2) {
-              cbl(e2, null);
-            }
-          } else
-            term.push(inflate(infl, { size: su }, cbl));
-        } else
-          cbl(err(14, "unknown compression type " + c_1, 1), null);
-      } else
-        cbl(null, null);
-    };
-    for (var i = 0; i < c; ++i) {
-      _loop_3(i);
-    }
-  } else
-    cbd(null, {});
-  return tAll;
-}
-
-// src/services/fetcher.ts
-function planPull(vault, files) {
-  const remotePaths = /* @__PURE__ */ new Set();
-  const toWrite = [];
-  for (const [zipPath] of Object.entries(files)) {
-    const path = stripRootDirectory(zipPath);
-    if (!path || isExcludedPath(path)) {
-      continue;
-    }
-    remotePaths.add(path);
-    if (!vault.getFileByPath(path)) {
-      toWrite.push(path);
-    }
-  }
-  const keptLocal = vault.getFiles().map((file) => file.path).filter((path) => !remotePaths.has(path) && !isExcludedPath(path)).sort();
-  return { toWrite, overwritten: [], keptLocal };
-}
-async function findOverwritten(vault, files) {
-  const overwritten = [];
-  for (const [zipPath, content] of Object.entries(files)) {
-    const path = stripRootDirectory(zipPath);
-    if (!path || isExcludedPath(path)) {
-      continue;
-    }
-    const existing = vault.getFileByPath(path);
-    if (existing && !await fileMatches(existing, content)) {
-      overwritten.push(path);
-    }
-  }
-  return overwritten.sort();
-}
-async function applyPull(vault, files, plan) {
-  const updated = [];
-  for (const [zipPath, content] of Object.entries(files)) {
-    const path = stripRootDirectory(zipPath);
-    if (!path || isExcludedPath(path)) {
-      continue;
-    }
-    const existing = vault.getFileByPath(path);
-    if (!existing) {
-      await ensureParentFolder(vault, path);
-      await vault.createBinary(path, toArrayBuffer(content));
-      updated.push(path);
-    } else if (plan.overwritten.includes(path) || !await fileMatches(existing, content)) {
-      await vault.modifyBinary(existing, toArrayBuffer(content));
-      updated.push(path);
-    }
-  }
-  return { updated, overwritten: plan.overwritten };
-}
-async function fileMatches(file, content) {
-  const local = new Uint8Array(await file.vault.readBinary(file));
-  if (local.byteLength !== content.byteLength) {
-    return false;
-  }
-  for (let index = 0; index < local.byteLength; index += 1) {
-    if (local[index] !== content[index]) {
-      return false;
-    }
-  }
-  return true;
-}
-function unzipAsync(data) {
-  return new Promise((resolve, reject) => {
-    unzip(new Uint8Array(data), (error, files) => {
-      if (error) {
-        reject(error);
-      } else {
-        resolve(files);
-      }
-    });
-  });
-}
-function stripRootDirectory(path) {
-  const withoutTrailingSlash = path.endsWith("/") ? path.slice(0, -1) : path;
-  if (!withoutTrailingSlash.includes("/")) {
-    return null;
-  }
-  const relative = withoutTrailingSlash.slice(withoutTrailingSlash.indexOf("/") + 1);
-  return relative || null;
-}
-async function ensureParentFolder(vault, path) {
-  const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-  if (!parent) {
-    return;
-  }
-  const segments = parent.split("/");
-  for (let index = 1; index <= segments.length; index += 1) {
-    const folder = segments.slice(0, index).join("/");
-    if (!vault.getFolderByPath(folder)) {
-      await vault.createFolder(folder);
-    }
-  }
-}
-function toArrayBuffer(data) {
-  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-}
-
 // src/services/blog.ts
 var DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
 var DEFAULT_TEMPLATE_REPO = "57Darling02/vitepress-butterfly-wiki";
 var SETUP_SECRETS = ["SETUP_PAT", "BLOG_REPO_NAME", "THEME_REPO", "CONFIGURE_PAGES"];
 var SETUP_WORKFLOW = "setup.yml";
 var TRIGGER_WORKFLOW = "trigger.yml";
-var DEPLOY_WORKFLOW = "deploy.yml";
 var CONTENT_REQUIRED_SECRETS = ["PAT", "BLOG_REPO"];
 var BLOG_REQUIRED_SECRETS = ["WIKI_URL", "PAT"];
 var BlogService = class {
@@ -4451,100 +3495,6 @@ var BlogService = class {
     await client.dispatchWorkflow(repository, TRIGGER_WORKFLOW);
     new import_obsidian3.Notice("\u5DF2\u89E6\u53D1\u535A\u5BA2\u91CD\u5EFA\u3002");
   }
-  /**
-   * Replaces the Vault with the latest repository content. Local-only files
-   * are always kept; if the remote would overwrite locally modified files,
-   * the user is asked first (conflict option).
-   */
-  async pull() {
-    const client = this.client();
-    const repository = await this.requireRepository(client);
-    new import_obsidian3.Notice("\u6B63\u5728\u62C9\u53D6\u4E91\u7AEF\u5185\u5BB9...");
-    const zip = await client.downloadZipball(repository);
-    const files = await unzipAsync(zip);
-    const plan = planPull(this.deps.app.vault, files);
-    const overwritten = await findOverwritten(this.deps.app.vault, files);
-    if (overwritten.length > 0) {
-      const confirmed = await confirmOverwrite(this.deps.app, overwritten);
-      if (!confirmed) {
-        new import_obsidian3.Notice("\u5DF2\u53D6\u6D88\u62C9\u53D6\uFF0C\u672C\u5730\u4FEE\u6539\u672A\u53D7\u5F71\u54CD\u3002");
-        return;
-      }
-    }
-    const result = await applyPull(this.deps.app.vault, files, { ...plan, overwritten });
-    new import_obsidian3.Notice(
-      `\u62C9\u53D6\u5B8C\u6210\uFF1A\u66F4\u65B0 ${result.updated.length} \u4E2A\u6587\u4EF6` + (result.overwritten.length > 0 ? `\uFF0C\u8986\u76D6\u672C\u5730\u4FEE\u6539 ${result.overwritten.length} \u4E2A` : "") + (plan.keptLocal.length > 0 ? `\uFF0C\u4FDD\u7559\u672C\u5730\u72EC\u6709 ${plan.keptLocal.length} \u4E2A` : "") + "\u3002"
-    );
-  }
-  /**
-   * Publishes the Vault. When the remote has moved ahead, the ref update
-   * fails and the user chooses between pulling or force-pushing.
-   */
-  async push() {
-    try {
-      const result = await this.publishOnce(false);
-      if (result.changed) {
-        await this.notifyAndWaitDeploy();
-      }
-      return result;
-    } catch (error) {
-      if (!isRefRejected(error)) {
-        throw error;
-      }
-      const confirmed = await confirmForcePush(this.deps.app);
-      if (!confirmed) {
-        throw new Error("\u5DF2\u53D6\u6D88\u3002\u8BF7\u5148\u300C\u62C9\u53D6\u6700\u65B0\u300D\u6216\u624B\u52A8\u5904\u7406\u51B2\u7A81\u540E\u518D\u53D1\u5E03\u3002");
-      }
-      const result = await this.publishOnce(true);
-      if (result.changed) {
-        await this.notifyAndWaitDeploy();
-      }
-      return result;
-    }
-  }
-  async publishOnce(force) {
-    const client = this.client();
-    const repository = await this.requireRepository(client);
-    const previousPaths = this.deps.getSettings().publishedPaths;
-    const result = await publishVault({
-      vault: this.deps.app.vault,
-      client,
-      repository,
-      previouslyPublishedPaths: previousPaths,
-      force
-    });
-    if (!result.changed) {
-      new import_obsidian3.Notice("\u6CA1\u6709\u9700\u8981\u53D1\u5E03\u7684\u53D8\u66F4\u3002");
-      return result;
-    }
-    await this.deps.saveSettings({ publishedPaths: result.publishedPaths });
-    new import_obsidian3.Notice(`\u5DF2\u53D1\u5E03 ${result.publishedPaths.length} \u4E2A\u6587\u4EF6${force ? "\uFF08\u8986\u76D6\u4E91\u7AEF\uFF09" : ""}\u3002`);
-    return result;
-  }
-  async notifyAndWaitDeploy() {
-    const { pat, blogRepoName } = this.requireSettings("\u53D1\u5E03");
-    const client = new GitHubClient(pat);
-    const repository = await this.requireRepository(client);
-    const user = await client.getAuthenticatedUser();
-    new import_obsidian3.Notice("\u5DF2\u53D1\u5E03\uFF0C\u7B49\u5F85\u535A\u5BA2\u6784\u5EFA...");
-    const startedAfter = /* @__PURE__ */ new Date();
-    const blogRepo = { owner: repository.owner, name: this.resolveBlogRepoName(blogRepoName, user.login) };
-    try {
-      const run = await client.waitForWorkflowRun(blogRepo, DEPLOY_WORKFLOW, {
-        event: "repository_dispatch",
-        startedAfter,
-        timeoutMs: 6e5,
-        intervalMs: 5e3
-      });
-      if (run.conclusion === "success") {
-        new import_obsidian3.Notice("\u535A\u5BA2\u90E8\u7F72\u6210\u529F\uFF01");
-      } else {
-        new import_obsidian3.Notice(`\u535A\u5BA2\u6784\u5EFA\u672A\u6210\u529F\uFF08${run.conclusion}\uFF09\uFF0C\u8BF7\u5230\u535A\u5BA2\u4ED3\u5E93 Actions \u67E5\u770B\u65E5\u5FD7\u3002`);
-      }
-    } catch (error) {
-      new import_obsidian3.Notice(`\u53D1\u5E03\u6210\u529F\uFF0C\u4F46\u7B49\u5F85\u6784\u5EFA\u7ED3\u679C\u8D85\u65F6\uFF1A${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
   client() {
     const { pat } = this.requireSettings("\u64CD\u4F5C");
     return new GitHubClient(pat);
@@ -4568,7 +3518,8 @@ var BlogService = class {
   }
   /**
    * Creates the private content repository from the template. The template
-   * content matches a fresh template zip, so the first publish is a no-op.
+   * content matches a fresh template zip, so cloning it yields the same
+   * files the user already has.
    */
   async createRepository(client, owner) {
     const { repoName, templateRepo } = this.deps.getSettings();
@@ -4626,9 +3577,6 @@ var BlogService = class {
 function missingSecrets(actual, required) {
   return required.filter((name) => !actual.includes(name));
 }
-function isRefRejected(error) {
-  return error instanceof GitHubApiError && error.status === 422;
-}
 function sanitizeRepoName(name) {
   const cleaned = name.trim().replace(/[^A-Za-z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
   return cleaned || "my-blog";
@@ -4639,67 +3587,6 @@ function parseRepoRef(value) {
     throw new Error(`\u6A21\u677F\u4ED3\u5E93\u683C\u5F0F\u5E94\u4E3A owner/repository\uFF1A${value}`);
   }
   return { owner: match[1], name: match[2] };
-}
-function confirmOverwrite(app, paths) {
-  return new Promise((resolve) => {
-    const modal = new import_obsidian3.Modal(app);
-    modal.titleEl.setText("\u4E91\u7AEF\u5C06\u8986\u76D6\u672C\u5730\u4FEE\u6539");
-    modal.contentEl.createEl("p", {
-      text: `\u4EE5\u4E0B ${paths.length} \u4E2A\u6587\u4EF6\u5728\u672C\u5730\u6709\u4FEE\u6539\uFF0C\u62C9\u53D6\u4F1A\u7528\u4E91\u7AEF\u7248\u672C\u8986\u76D6\uFF1A`
-    });
-    const listEl = modal.contentEl.createEl("ul");
-    for (const path of paths.slice(0, 8)) {
-      listEl.createEl("li", { text: path });
-    }
-    if (paths.length > 8) {
-      listEl.createEl("li", { text: `... \u7B49\u5171 ${paths.length} \u4E2A` });
-    }
-    const actionsEl = modal.contentEl.createDiv({ cls: "modal-button-container" });
-    const cancelButton = actionsEl.createEl("button", { text: "\u53D6\u6D88", type: "button" });
-    cancelButton.addEventListener("click", () => {
-      modal.close();
-      resolve(false);
-    });
-    const overwriteButton = actionsEl.createEl("button", {
-      text: "\u62C9\u53D6\u5E76\u820D\u5F03\u672C\u5730\u4FEE\u6539",
-      cls: "mod-warning",
-      type: "button"
-    });
-    overwriteButton.addEventListener("click", () => {
-      modal.close();
-      resolve(true);
-    });
-    modal.open();
-  });
-}
-function confirmForcePush(app) {
-  return new Promise((resolve) => {
-    const modal = new import_obsidian3.Modal(app);
-    modal.titleEl.setText("\u4E91\u7AEF\u6709\u66F4\u65B0");
-    modal.contentEl.createEl("p", {
-      text: "\u8FDC\u7AEF\u4ED3\u5E93\u5B58\u5728\u672C\u5730\u6CA1\u6709\u7684\u63D0\u4EA4\u3002\u8BF7\u9009\u62E9\u5982\u4F55\u5904\u7406\uFF1A"
-    });
-    modal.contentEl.createEl("p", {
-      cls: "vitepress-butterfly-publisher-hint",
-      text: "\u63D0\u793A\uFF1A\u5982\u679C\u5176\u4ED6\u8BBE\u5907\u5199\u8FC7\u5185\u5BB9\uFF0C\u5EFA\u8BAE\u5148\u300C\u62C9\u53D6\u6700\u65B0\u300D\u518D\u53D1\u5E03\uFF0C\u907F\u514D\u4E22\u5931\u3002"
-    });
-    const actionsEl = modal.contentEl.createDiv({ cls: "modal-button-container" });
-    const cancelButton = actionsEl.createEl("button", { text: "\u53D6\u6D88", type: "button" });
-    cancelButton.addEventListener("click", () => {
-      modal.close();
-      resolve(false);
-    });
-    const forceButton = actionsEl.createEl("button", {
-      text: "\u5F3A\u5236\u63A8\u9001\uFF08\u8986\u76D6\u4E91\u7AEF\uFF09",
-      cls: "mod-warning",
-      type: "button"
-    });
-    forceButton.addEventListener("click", () => {
-      modal.close();
-      resolve(true);
-    });
-    modal.open();
-  });
 }
 
 // src/ui/NewArticleModal.ts
@@ -4792,25 +3679,18 @@ var VitePressButterflyPublisher = class extends import_obsidian5.Plugin {
         onCheckBlogRepo: () => this.blog.checkBlogRepo(),
         onCheckReady: () => this.blog.checkReady(),
         onSetup: () => this.blog.setup(),
-        onTrigger: () => this.blog.triggerDeploy(),
-        onPull: () => this.blog.pull(),
-        onPush: () => this.blog.push()
+        onTrigger: () => this.blog.triggerDeploy()
       })
     );
-    this.addCommand({
-      id: "push-blog",
-      name: "\u63A8\u9001\u53D1\u5E03\u535A\u5BA2",
-      callback: () => this.runWithFeedback("\u63A8\u9001\u53D1\u5E03", () => this.blog.push())
-    });
-    this.addCommand({
-      id: "pull-blog",
-      name: "\u62C9\u53D6\u4E91\u7AEF\u6700\u65B0\u5185\u5BB9",
-      callback: () => this.runWithFeedback("\u62C9\u53D6\u6700\u65B0", () => this.blog.pull())
-    });
     this.addCommand({
       id: "setup-blog",
       name: "\u89E6\u53D1 Setup\uFF08\u521B\u5EFA\u535A\u5BA2\u4ED3\u5E93\uFF09",
       callback: () => this.runWithFeedback("\u89E6\u53D1 Setup", () => this.blog.setup())
+    });
+    this.addCommand({
+      id: "trigger-deploy",
+      name: "\u89E6\u53D1\u535A\u5BA2\u91CD\u5EFA",
+      callback: () => this.runWithFeedback("\u89E6\u53D1\u90E8\u7F72", () => this.blog.triggerDeploy())
     });
     this.addCommand({
       id: "new-article",

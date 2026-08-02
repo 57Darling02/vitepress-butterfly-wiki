@@ -36,7 +36,33 @@ Setup 会自动完成：fork 主题仓库 → 配置两个仓库的 secrets → 
 
 ### 5. 开始写作
 
-在 Obsidian 中写 Markdown，然后点击 **推送发布**——插件会提交内容并自动触发博客重新构建，等待提示"博客部署成功"即可。多设备切换时先点 **拉取最新** 同步云端内容。
+Setup 完成后，用 obsidian-git 把文章仓库克隆到本地（见下方说明），之后：
+
+1. 在 Obsidian 中写 Markdown（命令面板可运行 **新建博客文章** 生成带 frontmatter 的文章）
+2. obsidian-git 面板：**Commit** → **Push**——推送会自动触发博客重新构建部署
+3. 多设备切换时先 **Pull** 同步云端内容
+
+## 双插件分工
+
+| 插件 | 职责 |
+|---|---|
+| **VitePress Butterfly Publisher**（内置） | 初始化与部署：创建文章仓库、配置 secrets、触发 Setup、触发重建 |
+| **obsidian-git**（内置） | 日常内容同步：Clone / Commit / Push / Pull，桌面端与移动端均可 |
+
+### obsidian-git 移动端配置（安卓 / iOS）
+
+obsidian-git 在移动端内置纯 JS 的 Git 实现（isomorphic-git），无需安装任何软件，同样支持 PAT 认证、可处理大仓库。首次使用：
+
+1. 打开 obsidian-git 设置，确认仓库路径（Base path）留空
+2. 执行命令 **Clone an existing repository**，URL 填（把 token 嵌入地址，作为用户名）：
+
+```text
+https://<你的PAT>@github.com/你的用户名/文章仓库名.git
+```
+
+3. 克隆完成后即可正常 **Commit / Push / Pull**
+
+> PAT 会保存在本地 `.git/config` 中，不会上传；桌面端用系统 Git，直接 git clone 或 obsidian-git 均可。
 
 ## 内置插件说明
 
@@ -49,28 +75,18 @@ Setup 会自动完成：fork 主题仓库 → 配置两个仓库的 secrets → 
 | 博客样式仓库 | 博客仓库能否访问（留空默认 `用户名.github.io`） |
 | 就绪检测 | 两个仓库的 Actions secrets 是否完整（Setup 完成后才就绪） |
 
-操作区提供四个动作：
+操作区提供两个动作：
 
 | 操作 | 作用 |
 |---|---|
 | 触发 Setup | 创建博客仓库、配置全部 secrets 并触发首次部署（只需一次） |
-| 拉取最新 | 用云端 `main` 分支更新 Vault；本地独有文件永远保留，覆盖本地修改前会询问 |
-| 推送发布 | 提交 Vault 变更并等待博客部署完成 |
 | 触发部署 | 不发布内容，仅通知博客仓库重新构建 |
 
-### 冲突处理
-
-- **推送**时云端已有本地没有的提交（比如另一台设备发过文章），插件会弹窗询问：
-  - **强制推送（覆盖云端）**：丢弃云端内容，以当前设备为准
-  - **取消**：先「拉取最新」再继续
-- **拉取**时云端版本与本地修改过的文件冲突，插件会列出文件并询问：
-  - **拉取并舍弃本地修改**：用云端版本覆盖
-  - **取消**：保持本地不动
-- 本地未发布的草稿文件在拉取时**始终保留**，不会被删除。
+> 发布与拉取交给 obsidian-git：Push 后文章仓库的 trigger 工作流会自动通知博客仓库重建。
 
 ### 安全说明
 
-- PAT 只保存在本机插件设置（`.obsidian/plugins/vitepress-butterfly-publisher/data.json`）和 GitHub 加密 secrets 中，不会随发布上传
+- PAT 只保存在本机插件设置（`.obsidian/plugins/vitepress-butterfly-publisher/data.json`）和 GitHub 加密 secrets 中，不会上传
 - 建议使用专用 PAT；泄露后可随时在 GitHub 吊销
 - 文章仓库推荐保持私密；博客仓库是公开的（GitHub Pages 部署）
 
@@ -102,9 +118,9 @@ layout: doc
 
 - 粘贴的图片自动保存到 `附件/`
 - 链接使用相对路径 Markdown 格式，与博客构建完全兼容
-- 内置发布插件，写作后一键发布上线
+- 内置双插件：Publisher 负责初始化/部署，obsidian-git 负责日常同步
 
-桌面端高级用户也可以安装 [obsidian-git](https://github.com/Vinzent03/obsidian-git) 插件获得完整的 Git 体验（历史、diff、回滚），仓库已包含其配置；它与发布插件可以共存，但**日常发布建议只用发布插件**，避免两套流程混淆。
+桌面端高级用户可以在 obsidian-git 中使用完整 Git 能力（历史、diff、分支、回滚）；移动端同样支持（见上文配置）。
 
 ## 站点配置
 

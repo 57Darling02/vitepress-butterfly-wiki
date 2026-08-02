@@ -31,44 +31,6 @@ export interface GitHubRepository {
   readonly htmlUrl: string;
 }
 
-export interface GitRef {
-  readonly ref: string;
-  readonly sha: string;
-}
-
-export interface GitBlob {
-  readonly sha: string;
-}
-
-export interface GitTreeEntry {
-  readonly path: string;
-  readonly mode: "100644" | "100755" | "040000" | "160000";
-  readonly type: "blob" | "tree" | "commit";
-  readonly sha?: string | null;
-  readonly content?: string;
-}
-
-export interface GitTreeNode {
-  readonly path: string;
-  readonly mode: string;
-  readonly type: string;
-  readonly sha: string;
-  readonly size?: number;
-}
-
-export interface GitTree {
-  readonly sha: string;
-  readonly entries: readonly GitTreeNode[];
-  readonly truncated: boolean;
-}
-
-export interface GitCommit {
-  readonly sha: string;
-  readonly tree: {
-    readonly sha: string;
-  };
-}
-
 export interface GitHubSecretPublicKey {
   readonly keyId: string;
   readonly key: string;
@@ -129,24 +91,20 @@ export class WorkflowRunTimeoutError extends Error {
   }
 }
 
-interface GitHubRefResponse {
-  ref: string;
-  object: { sha: string };
+interface GitHubUserResponse {
+  login: string;
+  avatar_url: string;
+  html_url: string;
 }
 
-interface GitHubBlobResponse {
-  sha: string;
-}
-
-interface GitHubTreeResponse {
-  sha: string;
-  tree: GitTreeNode[];
-  truncated?: boolean;
-}
-
-interface GitHubCommitResponse {
-  sha: string;
-  tree: { sha: string };
+interface GitHubRepositoryResponse {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  default_branch: string;
+  html_url: string;
+  owner: { login: string };
 }
 
 interface GitHubSecretPublicKeyResponse {
@@ -168,22 +126,6 @@ interface GitHubWorkflowRunResponse {
 
 interface GitHubWorkflowRunsResponse {
   workflow_runs: GitHubWorkflowRunResponse[];
-}
-
-interface GitHubUserResponse {
-  login: string;
-  avatar_url: string;
-  html_url: string;
-}
-
-interface GitHubRepositoryResponse {
-  id: number;
-  name: string;
-  full_name: string;
-  private: boolean;
-  default_branch: string;
-  html_url: string;
-  owner: { login: string };
 }
 
 interface RequestOptions {
@@ -258,115 +200,6 @@ export class GitHubClient {
     return this.toRepository(result);
   }
 
-  async getRef(repository: RepoRef, ref = "main"): Promise<GitRef> {
-    const result = await this.request<GitHubRefResponse>(
-      `${this.repositoryPath(repository)}/git/ref/${encodeRef(ref)}`,
-    );
-
-    return {
-      ref: result.ref,
-      sha: result.object.sha,
-    };
-  }
-
-  async getCommit(repository: RepoRef, sha: string): Promise<GitCommit> {
-    const result = await this.request<GitHubCommitResponse>(
-      `${this.repositoryPath(repository)}/git/commits/${encodeURIComponent(sha)}`,
-    );
-
-    return {
-      sha: result.sha,
-      tree: { sha: result.tree.sha },
-    };
-  }
-
-  async getTree(repository: RepoRef, treeSha: string, recursive = true): Promise<GitTree> {
-    const result = await this.request<GitHubTreeResponse>(
-      `${this.repositoryPath(repository)}/git/trees/${encodeURIComponent(treeSha)}`,
-      { query: recursive ? { recursive: 1 } : undefined },
-    );
-
-    return {
-      sha: result.sha,
-      entries: result.tree,
-      truncated: result.truncated ?? false,
-    };
-  }
-
-  async createBlob(
-    repository: RepoRef,
-    content: string,
-    encoding: "utf-8" | "base64" = "utf-8",
-  ): Promise<GitBlob> {
-    const result = await this.request<GitHubBlobResponse>(
-      `${this.repositoryPath(repository)}/git/blobs`,
-      {
-        method: "POST",
-        body: { content, encoding },
-      },
-    );
-
-    return { sha: result.sha };
-  }
-
-  async createTree(
-    repository: RepoRef,
-    entries: readonly GitTreeEntry[],
-    baseTree?: string,
-  ): Promise<GitTree> {
-    const result = await this.request<GitHubTreeResponse>(
-      `${this.repositoryPath(repository)}/git/trees`,
-      {
-        method: "POST",
-        body: {
-          base_tree: baseTree,
-          tree: entries,
-        },
-      },
-    );
-
-    return {
-      sha: result.sha,
-      entries: result.tree,
-      truncated: result.truncated ?? false,
-    };
-  }
-
-  async createCommit(
-    repository: RepoRef,
-    message: string,
-    tree: string,
-    parents: readonly string[],
-  ): Promise<GitCommit> {
-    const result = await this.request<GitHubCommitResponse>(
-      `${this.repositoryPath(repository)}/git/commits`,
-      {
-        method: "POST",
-        body: { message, tree, parents },
-      },
-    );
-
-    return {
-      sha: result.sha,
-      tree: { sha: result.tree.sha },
-    };
-  }
-
-  async updateRef(
-    repository: RepoRef,
-    ref: string,
-    sha: string,
-    force = false,
-  ): Promise<void> {
-    await this.request<void>(
-      `${this.repositoryPath(repository)}/git/refs/${encodeRef(ref)}`,
-      {
-        method: "PATCH",
-        body: { sha, force },
-      },
-    );
-  }
-
   async listSecrets(repository: RepoRef): Promise<string[]> {
     const result = await this.request<{ secrets: { name: string }[] }>(
       `${this.repositoryPath(repository)}/actions/secrets`,
@@ -407,33 +240,6 @@ export class GitHubClient {
       `${this.repositoryPath(repository)}/actions/secrets/${encodeURIComponent(name)}`,
       { method: "DELETE" },
     );
-  }
-
-  /**
-   * Downloads the repository archive as a zipball. Follows GitHub's redirect
-   * to codeload; the signed URL needs no further authorization.
-   */
-  async downloadZipball(repository: RepoRef, ref = "main"): Promise<ArrayBuffer> {
-    const url = `${API_URL}${this.repositoryPath(repository)}/zipball/${encodeURIComponent(ref)}`;
-    const response = await requestUrl({
-      url,
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${this.token}`,
-        "X-GitHub-Api-Version": API_VERSION,
-      },
-      throw: false,
-    });
-
-    if (response.status < 200 || response.status >= 300) {
-      throw new GitHubApiError(
-        apiMessage(response.text, response.status),
-        response.status,
-        url,
-      );
-    }
-
-    return response.arrayBuffer;
   }
 
   async dispatchWorkflow(
@@ -580,16 +386,6 @@ export class GitHubClient {
       htmlUrl: result.html_url,
     };
   }
-}
-
-function encodeRef(ref: string): string {
-  const normalized = ref.startsWith("refs/")
-    ? ref.slice("refs/".length)
-    : /^(heads|tags)\//.test(ref)
-      ? ref
-      : `heads/${ref}`;
-
-  return normalized.split("/").map(encodeURIComponent).join("/");
 }
 
 function stringifyInputs(inputs: WorkflowInputs): Record<string, string> {
