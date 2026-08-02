@@ -1,7 +1,7 @@
 {
   "id": "vitepress-butterfly-publisher",
   "name": "VitePress Butterfly Publisher",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "minAppVersion": "1.5.0",
   "description": "首次配置助手：检测 PAT、创建/配置文章与博客仓库、管理 GitHub secrets；日常同步请用 obsidian-git。",
   "author": "57Darling02",

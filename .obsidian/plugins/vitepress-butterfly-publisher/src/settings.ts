@@ -52,24 +52,23 @@ type RepoState = "idle" | "checking" | "exists" | "missing" | "working";
 interface RepoAreaState {
 	state: RepoState;
 	check: RepoCheckResult | null;
-	message: { kind: "ok" | "error"; text: string } | null;
 }
 
 export class PublisherSettingsTab extends PluginSettingTab {
 	private verifiedPat = "";
 	private verifiedLogin = "";
 	private repositoryInputs: Disableable[] = [];
-	private articleButtons: { button: ButtonComponent; requiresNames: boolean }[] = [];
-	private blogButtons: { button: ButtonComponent; requiresNames: boolean }[] = [];
 	private patButton?: ButtonComponent;
 	private patInput?: TextComponent;
 	private repositorySection?: HTMLElement;
-	private articleSectionEl?: HTMLElement;
-	private blogSectionEl?: HTMLElement;
-	private articleControlsEl?: HTMLElement;
-	private blogControlsEl?: HTMLElement;
-	private article: RepoAreaState = { state: "idle", check: null, message: null };
-	private blog: RepoAreaState = { state: "idle", check: null, message: null };
+	private articleStatus?: HTMLSpanElement;
+	private blogStatus?: HTMLSpanElement;
+	private articleCheckButton?: ButtonComponent;
+	private articleActionButton?: ButtonComponent;
+	private blogCheckButton?: ButtonComponent;
+	private blogActionButton?: ButtonComponent;
+	private article: RepoAreaState = { state: "idle", check: null };
+	private blog: RepoAreaState = { state: "idle", check: null };
 	private isPatChecking = false;
 	private isActionRunning = false;
 
@@ -87,15 +86,15 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 		this.repositoryInputs = [];
-		this.articleButtons = [];
-		this.blogButtons = [];
 		this.patButton = undefined;
 		this.patInput = undefined;
 		this.repositorySection = undefined;
-		this.articleSectionEl = undefined;
-		this.blogSectionEl = undefined;
-		this.articleControlsEl = undefined;
-		this.blogControlsEl = undefined;
+		this.articleStatus = undefined;
+		this.blogStatus = undefined;
+		this.articleCheckButton = undefined;
+		this.articleActionButton = undefined;
+		this.blogCheckButton = undefined;
+		this.blogActionButton = undefined;
 
 		containerEl.createEl("h2", { text: "VitePress Butterfly 发布" });
 		containerEl.createEl("p", {
@@ -117,7 +116,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			.setName("GitHub PAT")
 			.setDesc("使用具有 repo + workflow 权限的 Tokens (classic)；仅保存在本机和 GitHub 加密 secrets 中。");
 		const status = this.createStatus(setting.descEl);
-		const settings = this.getSettings();
+		this.setStatus(status, "warn", "未检测");
 
 		if (this.isPatVerified()) {
 			this.setStatus(status, "ok", `✓ 已连接 @${this.verifiedLogin}`);
@@ -130,7 +129,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				text.inputEl.autocomplete = "off";
 				text.inputEl.spellcheck = false;
 				text.setPlaceholder("ghp_...");
-				text.setValue(settings.pat);
+				text.setValue(this.getSettings().pat);
 				text.onChange((value) => {
 					const normalized = value.trim();
 					void this.saveSettings({ pat: normalized }).catch((error: unknown) => {
@@ -158,7 +157,8 @@ export class PublisherSettingsTab extends PluginSettingTab {
 	}
 
 	// ------------------------------------------------------------------
-	// Repository areas (each with its own detect → act state machine).
+	// Repository sections (mirror the PAT layout: buttons on the right of
+	// the input, status message below the description).
 	// ------------------------------------------------------------------
 
 	private renderRepositories(containerEl: HTMLElement): void {
@@ -172,33 +172,34 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		});
 		hint.setAttribute("aria-live", "polite");
 
-		this.articleSectionEl = this.repositorySection.createDiv();
-		this.blogSectionEl = this.repositorySection.createDiv();
-		this.renderArticleSection();
-		this.renderBlogSection();
+		this.renderArticleSection(this.repositorySection);
+		this.renderBlogSection(this.repositorySection);
 
 		this.repositorySection.createEl("h3", { text: "日常操作" });
 		new Setting(this.repositorySection)
 			.setName("重新构建博客")
 			.setDesc("通常无需手动执行；文章仓库 Push 后会自动触发。")
 			.addButton((button) => {
-				button.setButtonText("触发构建");
 				this.repositoryInputs.push(button);
+				button.setButtonText("触发构建");
 				button.onClick(() => {
 					void this.runSimpleAction(button, "触发构建", "触发中…", this.actions.onTrigger);
 				});
 			});
 	}
 
-	private renderArticleSection(): void {
-		if (!this.articleSectionEl) {
-			return;
-		}
-		this.articleSectionEl.empty();
-		this.articleControlsEl = undefined;
-		const setting = new Setting(this.articleSectionEl)
+	private renderArticleSection(containerEl: HTMLElement): void {
+		const setting = new Setting(containerEl)
 			.setName("文章仓库")
 			.setDesc("保存文章和站点配置的私密仓库。");
+		const status = this.createStatus(setting.descEl);
+		this.articleStatus = status;
+		this.setStatus(
+			status,
+			this.namesReady() ? "warn" : "error",
+			this.namesReady() ? "未检测" : "请先填写文章仓库名和博客仓库名",
+		);
+
 		setting.addText((text) => {
 			this.repositoryInputs.push(text);
 			text.setPlaceholder("my-blog-wiki");
@@ -208,23 +209,53 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					new Notice(this.errorMessage(error, "保存仓库名失败"));
 				});
 				// A different name invalidates the previous check result.
-				this.article = { state: "idle", check: null, message: null };
-				this.renderArticleControls();
+				this.article = { state: "idle", check: null };
+				this.updateRepoButtons("article");
+				this.setStatus(
+					status,
+					this.namesReady() ? "warn" : "error",
+					this.namesReady() ? "仓库名已修改，请重新检测" : "请先填写文章仓库名和博客仓库名",
+				);
+				this.updateAvailability();
 			});
 		});
-		this.articleControlsEl = this.articleSectionEl.createDiv({ cls: "vpb-repo-controls" });
-		this.renderArticleControls();
+
+		setting.addButton((button) => {
+			this.articleCheckButton = button;
+			button.setButtonText("检测仓库");
+			button.onClick(() => {
+				void this.runRepoCheck("article");
+			});
+		});
+
+		setting.addButton((button) => {
+			this.articleActionButton = button;
+			button.setCta();
+			button.onClick(() => {
+				if (this.article.state === "exists") {
+					void this.runRepoAction("article", "secrets");
+				} else if (this.article.state === "missing") {
+					void this.runRepoAction("article", "create");
+				}
+			});
+			button.buttonEl.hidden = true;
+		});
+
+		this.updateRepoButtons("article");
 	}
 
-	private renderBlogSection(): void {
-		if (!this.blogSectionEl) {
-			return;
-		}
-		this.blogSectionEl.empty();
-		this.blogControlsEl = undefined;
-		const setting = new Setting(this.blogSectionEl)
+	private renderBlogSection(containerEl: HTMLElement): void {
+		const setting = new Setting(containerEl)
 			.setName("博客仓库")
 			.setDesc("公开的博客主题仓库，不存在时从官方模板创建。");
+		const status = this.createStatus(setting.descEl);
+		this.blogStatus = status;
+		this.setStatus(
+			status,
+			this.namesReady() ? "warn" : "error",
+			this.namesReady() ? "未检测" : "请先填写文章仓库名和博客仓库名",
+		);
+
 		setting.addText((text) => {
 			this.repositoryInputs.push(text);
 			text.setPlaceholder("yourname.github.io");
@@ -233,125 +264,111 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				void this.saveSettings({ blogRepoName: value.trim() }).catch((error: unknown) => {
 					new Notice(this.errorMessage(error, "保存仓库名失败"));
 				});
-				this.blog = { state: "idle", check: null, message: null };
-				this.renderBlogControls();
+				this.blog = { state: "idle", check: null };
+				this.updateRepoButtons("blog");
+				this.setStatus(
+					status,
+					this.namesReady() ? "warn" : "error",
+					this.namesReady() ? "仓库名已修改，请重新检测" : "请先填写文章仓库名和博客仓库名",
+				);
+				this.updateAvailability();
 			});
 		});
-		this.blogControlsEl = this.blogSectionEl.createDiv({ cls: "vpb-repo-controls" });
-		this.renderBlogControls();
+
+		setting.addButton((button) => {
+			this.blogCheckButton = button;
+			button.setButtonText("检测仓库");
+			button.onClick(() => {
+				void this.runRepoCheck("blog");
+			});
+		});
+
+		setting.addButton((button) => {
+			this.blogActionButton = button;
+			button.setCta();
+			button.onClick(() => {
+				if (this.blog.state === "exists") {
+					void this.runRepoAction("blog", "secrets");
+				} else if (this.blog.state === "missing") {
+					void this.runRepoAction("blog", "create");
+				}
+			});
+			button.buttonEl.hidden = true;
+		});
+
+		this.updateRepoButtons("blog");
 	}
 
-	private renderArticleControls(): void {
-		this.renderRepoControls(this.articleControlsEl, this.article, "article");
-	}
-
-	private renderBlogControls(): void {
-		this.renderRepoControls(this.blogControlsEl, this.blog, "blog");
-	}
-
-	private renderRepoControls(
-		container: HTMLElement | undefined,
-		area: RepoAreaState,
-		which: "article" | "blog",
-	): void {
-		if (!container) {
+	/** Switches the two repo buttons (check + action) to match the state. */
+	private updateRepoButtons(which: "article" | "blog"): void {
+		const area = which === "article" ? this.article : this.blog;
+		const check = which === "article" ? this.articleCheckButton : this.blogCheckButton;
+		const action = which === "article" ? this.articleActionButton : this.blogActionButton;
+		if (!check || !action) {
 			return;
 		}
-		container.empty();
-		const buttons = which === "article" ? this.articleButtons : this.blogButtons;
-		buttons.length = 0;
 
-		const statusEl = container.createDiv({ cls: "vitepress-butterfly-check-status" });
-		const actionsEl = container.createDiv({ cls: "vpb-repo-actions" });
-
-		if (area.message) {
-			statusEl.textContent = area.message.text;
-			statusEl.addClass(area.message.kind === "ok" ? "vpb-ok" : "vpb-error");
-		} else {
-			switch (area.state) {
-				case "checking":
-					statusEl.textContent = "正在检测…";
-					statusEl.addClass("vpb-loading");
-					break;
-				case "exists":
-					statusEl.textContent = area.check?.pendingResume
-						? "✓ 仓库已存在（上次创建未完成，可点「创建仓库并配置」继续）"
-						: "✓ 仓库已存在";
-					statusEl.addClass("vpb-ok");
-					break;
-				case "missing":
-					statusEl.textContent = "✓ 仓库不存在，可以创建";
-					statusEl.addClass("vpb-ok");
-					break;
-				case "working":
-					statusEl.textContent = "正在配置…（网络中断可直接重试）";
-					statusEl.addClass("vpb-loading");
-					break;
-				default:
-					statusEl.textContent = this.namesReady()
-						? "未检测"
-						: "请先填写文章仓库名和博客仓库名";
-			}
-		}
-
-		const namesReady = this.namesReady();
 		switch (area.state) {
 			case "checking":
-				this.addRepoButton(actionsEl, "检测中…", false, undefined, false, buttons).setDisabled(true);
+				check.setButtonText("检测中…");
+				this.setButtonLoading(check, true);
+				action.buttonEl.hidden = true;
 				break;
 			case "exists":
-				this.addRepoButton(actionsEl, "重新检测", false, () => void this.runRepoCheck(which), false, buttons);
-				this.addRepoButton(actionsEl, "仅配置变量", true, () => void this.runRepoAction(which, "secrets"), false, buttons);
+				check.setButtonText("重新检测");
+				this.setButtonLoading(check, false);
+				action.setButtonText("仅配置变量");
+				this.setButtonLoading(action, false);
+				action.buttonEl.hidden = false;
 				break;
 			case "missing":
-				this.addRepoButton(actionsEl, "重新检测", false, () => void this.runRepoCheck(which), false, buttons);
-				this.addRepoButton(actionsEl, "创建仓库并配置", true, () => void this.runRepoAction(which, "create"), false, buttons);
+				check.setButtonText("重新检测");
+				this.setButtonLoading(check, false);
+				action.setButtonText("创建仓库并配置");
+				this.setButtonLoading(action, false);
+				action.buttonEl.hidden = false;
 				break;
 			case "working":
-				this.addRepoButton(actionsEl, "重新检测", false, undefined, false, buttons).setDisabled(true);
-				this.addRepoButton(actionsEl, "配置中…", true, undefined, false, buttons).setDisabled(true);
+				check.setButtonText("重新检测");
+				this.setButtonLoading(check, false);
+				action.setButtonText("配置中…");
+				this.setButtonLoading(action, true);
+				action.buttonEl.hidden = false;
 				break;
 			default:
-				this.addRepoButton(actionsEl, "检测仓库", false, () => void this.runRepoCheck(which), true, buttons);
+				check.setButtonText("检测仓库");
+				this.setButtonLoading(check, false);
+				action.buttonEl.hidden = true;
+				break;
 		}
 	}
 
-	private addRepoButton(
-		container: HTMLElement,
-		label: string,
-		cta: boolean,
-		onClick: (() => void) | undefined,
-		requiresNames: boolean,
-		buttons: { button: ButtonComponent; requiresNames: boolean }[],
-	): ButtonComponent {
-		const button = new ButtonComponent(container).setButtonText(label);
-		if (cta) {
-			button.setCta();
+	private setButtonLoading(button: ButtonComponent, loading: boolean): void {
+		button.buttonEl.classList.toggle("vpb-check-running", loading);
+		if (loading) {
+			button.setIcon("loader-2");
+		} else {
+			button.buttonEl.querySelector("svg")?.remove();
 		}
-		if (onClick) {
-			button.onClick(onClick);
-		}
-		buttons.push({ button, requiresNames });
-		return button;
 	}
 
-	private namesReady(): boolean {
-		const settings = this.getSettings();
-		return Boolean(settings.repoName.trim() && settings.blogRepoName.trim());
-	}
+	// ------------------------------------------------------------------
+	// Repository flows
+	// ------------------------------------------------------------------
 
 	private async runRepoCheck(which: "article" | "blog"): Promise<void> {
 		if (this.isPatChecking || this.isActionRunning) {
 			return;
 		}
 		const area = which === "article" ? this.article : this.blog;
-		area.message = null;
+		const status = which === "article" ? this.articleStatus : this.blogStatus;
+		if (!status) {
+			return;
+		}
+
 		area.state = "checking";
-		this.renderRepoControls(
-			which === "article" ? this.articleControlsEl : this.blogControlsEl,
-			area,
-			which,
-		);
+		this.updateRepoButtons(which);
+		this.setStatus(status, "loading", "正在检测…");
 		this.updateAvailability();
 		await yieldToUi();
 
@@ -361,15 +378,20 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				: await this.actions.onCheckBlogRepository();
 			area.check = result;
 			area.state = result.exists ? "exists" : "missing";
+			this.setStatus(
+				status,
+				"ok",
+				result.exists
+					? result.pendingResume
+						? "✓ 仓库已存在（上次创建未完成，可点「创建仓库并配置」继续）"
+						: "✓ 仓库已存在"
+					: "✓ 仓库不存在，可以创建",
+			);
 		} catch (error) {
 			area.state = "idle";
-			area.message = { kind: "error", text: `✗ ${this.errorMessage(error, "检测失败")}` };
+			this.setStatus(status, "error", `✗ ${this.errorMessage(error, "检测失败")}`);
 		} finally {
-			this.renderRepoControls(
-				which === "article" ? this.articleControlsEl : this.blogControlsEl,
-				area,
-				which,
-			);
+			this.updateRepoButtons(which);
 			this.updateAvailability();
 		}
 	}
@@ -382,13 +404,14 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			return;
 		}
 		const area = which === "article" ? this.article : this.blog;
-		area.message = null;
+		const status = which === "article" ? this.articleStatus : this.blogStatus;
+		if (!status) {
+			return;
+		}
+
 		area.state = "working";
-		this.renderRepoControls(
-			which === "article" ? this.articleControlsEl : this.blogControlsEl,
-			area,
-			which,
-		);
+		this.updateRepoButtons(which);
+		this.setStatus(status, "loading", "正在配置…（网络中断可直接重试）");
 		this.updateAvailability();
 		await yieldToUi();
 
@@ -408,27 +431,24 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				pendingResume: false,
 			};
 			area.state = "exists";
-			area.message = {
-				kind: "ok",
-				text: mode === "secrets"
+			this.setStatus(
+				status,
+				"ok",
+				mode === "secrets"
 					? `✓ ${this.fullName(result)} 环境变量已更新`
 					: result.created
 						? `✓ 已创建并配置 ${this.fullName(result)}`
 						: `✓ 已继续完成 ${this.fullName(result)} 的配置`,
-			};
+			);
 			if (result.warning) {
 				new Notice(result.warning, 8_000);
 			}
 			new Notice(`${which === "article" ? "文章仓库" : "博客仓库"}配置完成。`, 4_000);
 		} catch (error) {
 			area.state = area.check?.exists ? "exists" : area.check ? "missing" : "idle";
-			area.message = { kind: "error", text: `✗ ${this.errorMessage(error, "配置失败")}` };
+			this.setStatus(status, "error", `✗ ${this.errorMessage(error, "配置失败")}`);
 		} finally {
-			this.renderRepoControls(
-				which === "article" ? this.articleControlsEl : this.blogControlsEl,
-				area,
-				which,
-			);
+			this.updateRepoButtons(which);
 			this.updateAvailability();
 		}
 	}
@@ -453,6 +473,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		this.isPatChecking = true;
 		this.updateAvailability();
 		button.setButtonText("检测中…");
+		this.setButtonLoading(button, true);
 		this.setStatus(status, "loading", "正在连接 GitHub…");
 		await yieldToUi();
 
@@ -485,6 +506,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			this.isPatChecking = false;
 			if (this.patButton) {
 				this.patButton.setButtonText("检测连通性");
+				this.setButtonLoading(this.patButton, false);
 			}
 			this.updateAvailability();
 		}
@@ -501,6 +523,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		}
 		this.isActionRunning = true;
 		button.setButtonText(pendingLabel);
+		this.setButtonLoading(button, true);
 		this.updateAvailability();
 		await yieldToUi();
 		try {
@@ -510,6 +533,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		} finally {
 			this.isActionRunning = false;
 			button.setButtonText(label);
+			this.setButtonLoading(button, false);
 			this.updateAvailability();
 		}
 	}
@@ -521,21 +545,45 @@ export class PublisherSettingsTab extends PluginSettingTab {
 	private updateAvailability(): void {
 		const enabled = this.isPatVerified() && !this.isPatChecking && !this.isActionRunning;
 		this.repositoryInputs.forEach((input) => input.setDisabled(!enabled));
-		for (const item of [...this.articleButtons, ...this.blogButtons]) {
-			item.button.setDisabled(!enabled || (item.requiresNames && !this.namesReady()));
+		const pairs: [ButtonComponent | undefined, boolean][] = [
+			[this.articleCheckButton, this.isButtonLocked("article", "check")],
+			[this.articleActionButton, this.isButtonLocked("article", "action")],
+			[this.blogCheckButton, this.isButtonLocked("blog", "check")],
+			[this.blogActionButton, this.isButtonLocked("blog", "action")],
+		];
+		for (const [button, locked] of pairs) {
+			button?.setDisabled(!enabled || locked);
 		}
 		this.repositorySection?.toggleClass("is-locked", !this.isPatVerified());
 		this.patInput?.setDisabled(this.isPatChecking || this.isActionRunning);
 		this.patButton?.setDisabled(this.isPatChecking || this.isActionRunning);
 	}
 
+	private isButtonLocked(which: "article" | "blog", role: "check" | "action"): boolean {
+		const area = which === "article" ? this.article : this.blog;
+		if (area.state === "checking" || area.state === "working") {
+			return true;
+		}
+		if (role === "check" && area.state === "idle") {
+			return !this.namesReady();
+		}
+		if (role === "action") {
+			return area.state !== "exists" && area.state !== "missing";
+		}
+		return false;
+	}
+
 	private isPatVerified(): boolean {
 		return Boolean(this.verifiedPat) && this.getSettings().pat.trim() === this.verifiedPat;
 	}
 
+	private namesReady(): boolean {
+		const settings = this.getSettings();
+		return Boolean(settings.repoName.trim() && settings.blogRepoName.trim());
+	}
+
 	private createStatus(containerEl: HTMLElement): HTMLSpanElement {
 		const span = containerEl.createSpan({ cls: "vitepress-butterfly-check-status" });
-		span.textContent = "未检测";
 		span.setAttribute("aria-live", "polite");
 		return span;
 	}

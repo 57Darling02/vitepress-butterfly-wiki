@@ -16,6 +16,17 @@
   opacity: 0.55;
 }
 
+.vpb-check-running svg {
+  animation: vpb-spin 0.8s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes vpb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .vitepress-butterfly-check-status.vpb-ok {
   color: var(--color-green);
 }

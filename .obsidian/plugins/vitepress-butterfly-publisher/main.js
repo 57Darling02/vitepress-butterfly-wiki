@@ -3017,10 +3017,8 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.verifiedPat = "";
     this.verifiedLogin = "";
     this.repositoryInputs = [];
-    this.articleButtons = [];
-    this.blogButtons = [];
-    this.article = { state: "idle", check: null, message: null };
-    this.blog = { state: "idle", check: null, message: null };
+    this.article = { state: "idle", check: null };
+    this.blog = { state: "idle", check: null };
     this.isPatChecking = false;
     this.isActionRunning = false;
   }
@@ -3028,15 +3026,15 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     this.repositoryInputs = [];
-    this.articleButtons = [];
-    this.blogButtons = [];
     this.patButton = void 0;
     this.patInput = void 0;
     this.repositorySection = void 0;
-    this.articleSectionEl = void 0;
-    this.blogSectionEl = void 0;
-    this.articleControlsEl = void 0;
-    this.blogControlsEl = void 0;
+    this.articleStatus = void 0;
+    this.blogStatus = void 0;
+    this.articleCheckButton = void 0;
+    this.articleActionButton = void 0;
+    this.blogCheckButton = void 0;
+    this.blogActionButton = void 0;
     containerEl.createEl("h2", { text: "VitePress Butterfly \u53D1\u5E03" });
     containerEl.createEl("p", {
       text: "\u4F9D\u6B21\u5B8C\u6210\uFF1A\u9A8C\u8BC1 PAT \u2192 \u68C0\u6D4B\u5E76\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93 \u2192 \u68C0\u6D4B\u5E76\u914D\u7F6E\u535A\u5BA2\u4ED3\u5E93\u3002\u6BCF\u4E2A\u6309\u94AE\u90FD\u53EF\u5B89\u5168\u91CD\u8BD5\uFF0C\u7F51\u7EDC\u4E2D\u65AD\u4E0D\u4F1A\u91CD\u590D\u521B\u5EFA\u4ED3\u5E93\u3002"
@@ -3052,7 +3050,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     containerEl.createEl("h3", { text: "1. \u8FDE\u63A5 GitHub" });
     const setting = new import_obsidian.Setting(containerEl).setName("GitHub PAT").setDesc("\u4F7F\u7528\u5177\u6709 repo + workflow \u6743\u9650\u7684 Tokens (classic)\uFF1B\u4EC5\u4FDD\u5B58\u5728\u672C\u673A\u548C GitHub \u52A0\u5BC6 secrets \u4E2D\u3002");
     const status = this.createStatus(setting.descEl);
-    const settings = this.getSettings();
+    this.setStatus(status, "warn", "\u672A\u68C0\u6D4B");
     if (this.isPatVerified()) {
       this.setStatus(status, "ok", `\u2713 \u5DF2\u8FDE\u63A5 @${this.verifiedLogin}`);
     }
@@ -3062,7 +3060,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       text.inputEl.autocomplete = "off";
       text.inputEl.spellcheck = false;
       text.setPlaceholder("ghp_...");
-      text.setValue(settings.pat);
+      text.setValue(this.getSettings().pat);
       text.onChange((value) => {
         const normalized = value.trim();
         void this.saveSettings({ pat: normalized }).catch((error) => {
@@ -3088,7 +3086,8 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     });
   }
   // ------------------------------------------------------------------
-  // Repository areas (each with its own detect → act state machine).
+  // Repository sections (mirror the PAT layout: buttons on the right of
+  // the input, status message below the description).
   // ------------------------------------------------------------------
   renderRepositories(containerEl) {
     this.repositorySection = containerEl.createDiv({ cls: "vpb-repository-section" });
@@ -3098,26 +3097,26 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       text: this.isPatVerified() ? "\u5148\u70B9\u300C\u68C0\u6D4B\u4ED3\u5E93\u300D\u786E\u8BA4\u72B6\u6001\uFF1A\u4E0D\u5B58\u5728 \u2192 \u521B\u5EFA\u5E76\u914D\u7F6E\uFF1B\u5DF2\u5B58\u5728 \u2192 \u4EC5\u66F4\u65B0\u73AF\u5883\u53D8\u91CF\uFF0C\u4E0D\u6539\u4ED3\u5E93\u5185\u5BB9\u3002" : "\u{1F512} PAT \u8FDE\u901A\u6027\u68C0\u6D4B\u901A\u8FC7\u540E\u5373\u53EF\u68C0\u6D4B\u548C\u914D\u7F6E\u4ED3\u5E93\u3002"
     });
     hint.setAttribute("aria-live", "polite");
-    this.articleSectionEl = this.repositorySection.createDiv();
-    this.blogSectionEl = this.repositorySection.createDiv();
-    this.renderArticleSection();
-    this.renderBlogSection();
+    this.renderArticleSection(this.repositorySection);
+    this.renderBlogSection(this.repositorySection);
     this.repositorySection.createEl("h3", { text: "\u65E5\u5E38\u64CD\u4F5C" });
     new import_obsidian.Setting(this.repositorySection).setName("\u91CD\u65B0\u6784\u5EFA\u535A\u5BA2").setDesc("\u901A\u5E38\u65E0\u9700\u624B\u52A8\u6267\u884C\uFF1B\u6587\u7AE0\u4ED3\u5E93 Push \u540E\u4F1A\u81EA\u52A8\u89E6\u53D1\u3002").addButton((button) => {
-      button.setButtonText("\u89E6\u53D1\u6784\u5EFA");
       this.repositoryInputs.push(button);
+      button.setButtonText("\u89E6\u53D1\u6784\u5EFA");
       button.onClick(() => {
         void this.runSimpleAction(button, "\u89E6\u53D1\u6784\u5EFA", "\u89E6\u53D1\u4E2D\u2026", this.actions.onTrigger);
       });
     });
   }
-  renderArticleSection() {
-    if (!this.articleSectionEl) {
-      return;
-    }
-    this.articleSectionEl.empty();
-    this.articleControlsEl = void 0;
-    const setting = new import_obsidian.Setting(this.articleSectionEl).setName("\u6587\u7AE0\u4ED3\u5E93").setDesc("\u4FDD\u5B58\u6587\u7AE0\u548C\u7AD9\u70B9\u914D\u7F6E\u7684\u79C1\u5BC6\u4ED3\u5E93\u3002");
+  renderArticleSection(containerEl) {
+    const setting = new import_obsidian.Setting(containerEl).setName("\u6587\u7AE0\u4ED3\u5E93").setDesc("\u4FDD\u5B58\u6587\u7AE0\u548C\u7AD9\u70B9\u914D\u7F6E\u7684\u79C1\u5BC6\u4ED3\u5E93\u3002");
+    const status = this.createStatus(setting.descEl);
+    this.articleStatus = status;
+    this.setStatus(
+      status,
+      this.namesReady() ? "warn" : "error",
+      this.namesReady() ? "\u672A\u68C0\u6D4B" : "\u8BF7\u5148\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\u548C\u535A\u5BA2\u4ED3\u5E93\u540D"
+    );
     setting.addText((text) => {
       this.repositoryInputs.push(text);
       text.setPlaceholder("my-blog-wiki");
@@ -3126,20 +3125,46 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
         void this.saveSettings({ repoName: value.trim() }).catch((error) => {
           new import_obsidian.Notice(this.errorMessage(error, "\u4FDD\u5B58\u4ED3\u5E93\u540D\u5931\u8D25"));
         });
-        this.article = { state: "idle", check: null, message: null };
-        this.renderArticleControls();
+        this.article = { state: "idle", check: null };
+        this.updateRepoButtons("article");
+        this.setStatus(
+          status,
+          this.namesReady() ? "warn" : "error",
+          this.namesReady() ? "\u4ED3\u5E93\u540D\u5DF2\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u68C0\u6D4B" : "\u8BF7\u5148\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\u548C\u535A\u5BA2\u4ED3\u5E93\u540D"
+        );
+        this.updateAvailability();
       });
     });
-    this.articleControlsEl = this.articleSectionEl.createDiv({ cls: "vpb-repo-controls" });
-    this.renderArticleControls();
+    setting.addButton((button) => {
+      this.articleCheckButton = button;
+      button.setButtonText("\u68C0\u6D4B\u4ED3\u5E93");
+      button.onClick(() => {
+        void this.runRepoCheck("article");
+      });
+    });
+    setting.addButton((button) => {
+      this.articleActionButton = button;
+      button.setCta();
+      button.onClick(() => {
+        if (this.article.state === "exists") {
+          void this.runRepoAction("article", "secrets");
+        } else if (this.article.state === "missing") {
+          void this.runRepoAction("article", "create");
+        }
+      });
+      button.buttonEl.hidden = true;
+    });
+    this.updateRepoButtons("article");
   }
-  renderBlogSection() {
-    if (!this.blogSectionEl) {
-      return;
-    }
-    this.blogSectionEl.empty();
-    this.blogControlsEl = void 0;
-    const setting = new import_obsidian.Setting(this.blogSectionEl).setName("\u535A\u5BA2\u4ED3\u5E93").setDesc("\u516C\u5F00\u7684\u535A\u5BA2\u4E3B\u9898\u4ED3\u5E93\uFF0C\u4E0D\u5B58\u5728\u65F6\u4ECE\u5B98\u65B9\u6A21\u677F\u521B\u5EFA\u3002");
+  renderBlogSection(containerEl) {
+    const setting = new import_obsidian.Setting(containerEl).setName("\u535A\u5BA2\u4ED3\u5E93").setDesc("\u516C\u5F00\u7684\u535A\u5BA2\u4E3B\u9898\u4ED3\u5E93\uFF0C\u4E0D\u5B58\u5728\u65F6\u4ECE\u5B98\u65B9\u6A21\u677F\u521B\u5EFA\u3002");
+    const status = this.createStatus(setting.descEl);
+    this.blogStatus = status;
+    this.setStatus(
+      status,
+      this.namesReady() ? "warn" : "error",
+      this.namesReady() ? "\u672A\u68C0\u6D4B" : "\u8BF7\u5148\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\u548C\u535A\u5BA2\u4ED3\u5E93\u540D"
+    );
     setting.addText((text) => {
       this.repositoryInputs.push(text);
       text.setPlaceholder("yourname.github.io");
@@ -3148,116 +3173,118 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
         void this.saveSettings({ blogRepoName: value.trim() }).catch((error) => {
           new import_obsidian.Notice(this.errorMessage(error, "\u4FDD\u5B58\u4ED3\u5E93\u540D\u5931\u8D25"));
         });
-        this.blog = { state: "idle", check: null, message: null };
-        this.renderBlogControls();
+        this.blog = { state: "idle", check: null };
+        this.updateRepoButtons("blog");
+        this.setStatus(
+          status,
+          this.namesReady() ? "warn" : "error",
+          this.namesReady() ? "\u4ED3\u5E93\u540D\u5DF2\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u68C0\u6D4B" : "\u8BF7\u5148\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\u548C\u535A\u5BA2\u4ED3\u5E93\u540D"
+        );
+        this.updateAvailability();
       });
     });
-    this.blogControlsEl = this.blogSectionEl.createDiv({ cls: "vpb-repo-controls" });
-    this.renderBlogControls();
+    setting.addButton((button) => {
+      this.blogCheckButton = button;
+      button.setButtonText("\u68C0\u6D4B\u4ED3\u5E93");
+      button.onClick(() => {
+        void this.runRepoCheck("blog");
+      });
+    });
+    setting.addButton((button) => {
+      this.blogActionButton = button;
+      button.setCta();
+      button.onClick(() => {
+        if (this.blog.state === "exists") {
+          void this.runRepoAction("blog", "secrets");
+        } else if (this.blog.state === "missing") {
+          void this.runRepoAction("blog", "create");
+        }
+      });
+      button.buttonEl.hidden = true;
+    });
+    this.updateRepoButtons("blog");
   }
-  renderArticleControls() {
-    this.renderRepoControls(this.articleControlsEl, this.article, "article");
-  }
-  renderBlogControls() {
-    this.renderRepoControls(this.blogControlsEl, this.blog, "blog");
-  }
-  renderRepoControls(container, area, which) {
-    if (!container) {
+  /** Switches the two repo buttons (check + action) to match the state. */
+  updateRepoButtons(which) {
+    const area = which === "article" ? this.article : this.blog;
+    const check = which === "article" ? this.articleCheckButton : this.blogCheckButton;
+    const action = which === "article" ? this.articleActionButton : this.blogActionButton;
+    if (!check || !action) {
       return;
     }
-    container.empty();
-    const buttons = which === "article" ? this.articleButtons : this.blogButtons;
-    buttons.length = 0;
-    const statusEl = container.createDiv({ cls: "vitepress-butterfly-check-status" });
-    const actionsEl = container.createDiv({ cls: "vpb-repo-actions" });
-    if (area.message) {
-      statusEl.textContent = area.message.text;
-      statusEl.addClass(area.message.kind === "ok" ? "vpb-ok" : "vpb-error");
-    } else {
-      switch (area.state) {
-        case "checking":
-          statusEl.textContent = "\u6B63\u5728\u68C0\u6D4B\u2026";
-          statusEl.addClass("vpb-loading");
-          break;
-        case "exists":
-          statusEl.textContent = area.check?.pendingResume ? "\u2713 \u4ED3\u5E93\u5DF2\u5B58\u5728\uFF08\u4E0A\u6B21\u521B\u5EFA\u672A\u5B8C\u6210\uFF0C\u53EF\u70B9\u300C\u521B\u5EFA\u4ED3\u5E93\u5E76\u914D\u7F6E\u300D\u7EE7\u7EED\uFF09" : "\u2713 \u4ED3\u5E93\u5DF2\u5B58\u5728";
-          statusEl.addClass("vpb-ok");
-          break;
-        case "missing":
-          statusEl.textContent = "\u2713 \u4ED3\u5E93\u4E0D\u5B58\u5728\uFF0C\u53EF\u4EE5\u521B\u5EFA";
-          statusEl.addClass("vpb-ok");
-          break;
-        case "working":
-          statusEl.textContent = "\u6B63\u5728\u914D\u7F6E\u2026\uFF08\u7F51\u7EDC\u4E2D\u65AD\u53EF\u76F4\u63A5\u91CD\u8BD5\uFF09";
-          statusEl.addClass("vpb-loading");
-          break;
-        default:
-          statusEl.textContent = this.namesReady() ? "\u672A\u68C0\u6D4B" : "\u8BF7\u5148\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\u548C\u535A\u5BA2\u4ED3\u5E93\u540D";
-      }
-    }
-    const namesReady = this.namesReady();
     switch (area.state) {
       case "checking":
-        this.addRepoButton(actionsEl, "\u68C0\u6D4B\u4E2D\u2026", false, void 0, false, buttons).setDisabled(true);
+        check.setButtonText("\u68C0\u6D4B\u4E2D\u2026");
+        this.setButtonLoading(check, true);
+        action.buttonEl.hidden = true;
         break;
       case "exists":
-        this.addRepoButton(actionsEl, "\u91CD\u65B0\u68C0\u6D4B", false, () => void this.runRepoCheck(which), false, buttons);
-        this.addRepoButton(actionsEl, "\u4EC5\u914D\u7F6E\u53D8\u91CF", true, () => void this.runRepoAction(which, "secrets"), false, buttons);
+        check.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
+        this.setButtonLoading(check, false);
+        action.setButtonText("\u4EC5\u914D\u7F6E\u53D8\u91CF");
+        this.setButtonLoading(action, false);
+        action.buttonEl.hidden = false;
         break;
       case "missing":
-        this.addRepoButton(actionsEl, "\u91CD\u65B0\u68C0\u6D4B", false, () => void this.runRepoCheck(which), false, buttons);
-        this.addRepoButton(actionsEl, "\u521B\u5EFA\u4ED3\u5E93\u5E76\u914D\u7F6E", true, () => void this.runRepoAction(which, "create"), false, buttons);
+        check.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
+        this.setButtonLoading(check, false);
+        action.setButtonText("\u521B\u5EFA\u4ED3\u5E93\u5E76\u914D\u7F6E");
+        this.setButtonLoading(action, false);
+        action.buttonEl.hidden = false;
         break;
       case "working":
-        this.addRepoButton(actionsEl, "\u91CD\u65B0\u68C0\u6D4B", false, void 0, false, buttons).setDisabled(true);
-        this.addRepoButton(actionsEl, "\u914D\u7F6E\u4E2D\u2026", true, void 0, false, buttons).setDisabled(true);
+        check.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
+        this.setButtonLoading(check, false);
+        action.setButtonText("\u914D\u7F6E\u4E2D\u2026");
+        this.setButtonLoading(action, true);
+        action.buttonEl.hidden = false;
         break;
       default:
-        this.addRepoButton(actionsEl, "\u68C0\u6D4B\u4ED3\u5E93", false, () => void this.runRepoCheck(which), true, buttons);
+        check.setButtonText("\u68C0\u6D4B\u4ED3\u5E93");
+        this.setButtonLoading(check, false);
+        action.buttonEl.hidden = true;
+        break;
     }
   }
-  addRepoButton(container, label, cta, onClick, requiresNames, buttons) {
-    const button = new import_obsidian.ButtonComponent(container).setButtonText(label);
-    if (cta) {
-      button.setCta();
+  setButtonLoading(button, loading) {
+    button.buttonEl.classList.toggle("vpb-check-running", loading);
+    if (loading) {
+      button.setIcon("loader-2");
+    } else {
+      button.buttonEl.querySelector("svg")?.remove();
     }
-    if (onClick) {
-      button.onClick(onClick);
-    }
-    buttons.push({ button, requiresNames });
-    return button;
   }
-  namesReady() {
-    const settings = this.getSettings();
-    return Boolean(settings.repoName.trim() && settings.blogRepoName.trim());
-  }
+  // ------------------------------------------------------------------
+  // Repository flows
+  // ------------------------------------------------------------------
   async runRepoCheck(which) {
     if (this.isPatChecking || this.isActionRunning) {
       return;
     }
     const area = which === "article" ? this.article : this.blog;
-    area.message = null;
+    const status = which === "article" ? this.articleStatus : this.blogStatus;
+    if (!status) {
+      return;
+    }
     area.state = "checking";
-    this.renderRepoControls(
-      which === "article" ? this.articleControlsEl : this.blogControlsEl,
-      area,
-      which
-    );
+    this.updateRepoButtons(which);
+    this.setStatus(status, "loading", "\u6B63\u5728\u68C0\u6D4B\u2026");
     this.updateAvailability();
     await yieldToUi();
     try {
       const result = which === "article" ? await this.actions.onCheckArticleRepository() : await this.actions.onCheckBlogRepository();
       area.check = result;
       area.state = result.exists ? "exists" : "missing";
+      this.setStatus(
+        status,
+        "ok",
+        result.exists ? result.pendingResume ? "\u2713 \u4ED3\u5E93\u5DF2\u5B58\u5728\uFF08\u4E0A\u6B21\u521B\u5EFA\u672A\u5B8C\u6210\uFF0C\u53EF\u70B9\u300C\u521B\u5EFA\u4ED3\u5E93\u5E76\u914D\u7F6E\u300D\u7EE7\u7EED\uFF09" : "\u2713 \u4ED3\u5E93\u5DF2\u5B58\u5728" : "\u2713 \u4ED3\u5E93\u4E0D\u5B58\u5728\uFF0C\u53EF\u4EE5\u521B\u5EFA"
+      );
     } catch (error) {
       area.state = "idle";
-      area.message = { kind: "error", text: `\u2717 ${this.errorMessage(error, "\u68C0\u6D4B\u5931\u8D25")}` };
+      this.setStatus(status, "error", `\u2717 ${this.errorMessage(error, "\u68C0\u6D4B\u5931\u8D25")}`);
     } finally {
-      this.renderRepoControls(
-        which === "article" ? this.articleControlsEl : this.blogControlsEl,
-        area,
-        which
-      );
+      this.updateRepoButtons(which);
       this.updateAvailability();
     }
   }
@@ -3266,13 +3293,13 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       return;
     }
     const area = which === "article" ? this.article : this.blog;
-    area.message = null;
+    const status = which === "article" ? this.articleStatus : this.blogStatus;
+    if (!status) {
+      return;
+    }
     area.state = "working";
-    this.renderRepoControls(
-      which === "article" ? this.articleControlsEl : this.blogControlsEl,
-      area,
-      which
-    );
+    this.updateRepoButtons(which);
+    this.setStatus(status, "loading", "\u6B63\u5728\u914D\u7F6E\u2026\uFF08\u7F51\u7EDC\u4E2D\u65AD\u53EF\u76F4\u63A5\u91CD\u8BD5\uFF09");
     this.updateAvailability();
     await yieldToUi();
     try {
@@ -3284,23 +3311,20 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
         pendingResume: false
       };
       area.state = "exists";
-      area.message = {
-        kind: "ok",
-        text: mode === "secrets" ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : result.created ? `\u2713 \u5DF2\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u914D\u7F6E`
-      };
+      this.setStatus(
+        status,
+        "ok",
+        mode === "secrets" ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : result.created ? `\u2713 \u5DF2\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u914D\u7F6E`
+      );
       if (result.warning) {
         new import_obsidian.Notice(result.warning, 8e3);
       }
       new import_obsidian.Notice(`${which === "article" ? "\u6587\u7AE0\u4ED3\u5E93" : "\u535A\u5BA2\u4ED3\u5E93"}\u914D\u7F6E\u5B8C\u6210\u3002`, 4e3);
     } catch (error) {
       area.state = area.check?.exists ? "exists" : area.check ? "missing" : "idle";
-      area.message = { kind: "error", text: `\u2717 ${this.errorMessage(error, "\u914D\u7F6E\u5931\u8D25")}` };
+      this.setStatus(status, "error", `\u2717 ${this.errorMessage(error, "\u914D\u7F6E\u5931\u8D25")}`);
     } finally {
-      this.renderRepoControls(
-        which === "article" ? this.articleControlsEl : this.blogControlsEl,
-        area,
-        which
-      );
+      this.updateRepoButtons(which);
       this.updateAvailability();
     }
   }
@@ -3319,6 +3343,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.isPatChecking = true;
     this.updateAvailability();
     button.setButtonText("\u68C0\u6D4B\u4E2D\u2026");
+    this.setButtonLoading(button, true);
     this.setStatus(status, "loading", "\u6B63\u5728\u8FDE\u63A5 GitHub\u2026");
     await yieldToUi();
     try {
@@ -3348,6 +3373,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       this.isPatChecking = false;
       if (this.patButton) {
         this.patButton.setButtonText("\u68C0\u6D4B\u8FDE\u901A\u6027");
+        this.setButtonLoading(this.patButton, false);
       }
       this.updateAvailability();
     }
@@ -3358,6 +3384,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     }
     this.isActionRunning = true;
     button.setButtonText(pendingLabel);
+    this.setButtonLoading(button, true);
     this.updateAvailability();
     await yieldToUi();
     try {
@@ -3367,6 +3394,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     } finally {
       this.isActionRunning = false;
       button.setButtonText(label);
+      this.setButtonLoading(button, false);
       this.updateAvailability();
     }
   }
@@ -3376,19 +3404,41 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
   updateAvailability() {
     const enabled = this.isPatVerified() && !this.isPatChecking && !this.isActionRunning;
     this.repositoryInputs.forEach((input) => input.setDisabled(!enabled));
-    for (const item of [...this.articleButtons, ...this.blogButtons]) {
-      item.button.setDisabled(!enabled || item.requiresNames && !this.namesReady());
+    const pairs = [
+      [this.articleCheckButton, this.isButtonLocked("article", "check")],
+      [this.articleActionButton, this.isButtonLocked("article", "action")],
+      [this.blogCheckButton, this.isButtonLocked("blog", "check")],
+      [this.blogActionButton, this.isButtonLocked("blog", "action")]
+    ];
+    for (const [button, locked] of pairs) {
+      button?.setDisabled(!enabled || locked);
     }
     this.repositorySection?.toggleClass("is-locked", !this.isPatVerified());
     this.patInput?.setDisabled(this.isPatChecking || this.isActionRunning);
     this.patButton?.setDisabled(this.isPatChecking || this.isActionRunning);
   }
+  isButtonLocked(which, role) {
+    const area = which === "article" ? this.article : this.blog;
+    if (area.state === "checking" || area.state === "working") {
+      return true;
+    }
+    if (role === "check" && area.state === "idle") {
+      return !this.namesReady();
+    }
+    if (role === "action") {
+      return area.state !== "exists" && area.state !== "missing";
+    }
+    return false;
+  }
   isPatVerified() {
     return Boolean(this.verifiedPat) && this.getSettings().pat.trim() === this.verifiedPat;
   }
+  namesReady() {
+    const settings = this.getSettings();
+    return Boolean(settings.repoName.trim() && settings.blogRepoName.trim());
+  }
   createStatus(containerEl) {
     const span = containerEl.createSpan({ cls: "vitepress-butterfly-check-status" });
-    span.textContent = "\u672A\u68C0\u6D4B";
     span.setAttribute("aria-live", "polite");
     return span;
   }
