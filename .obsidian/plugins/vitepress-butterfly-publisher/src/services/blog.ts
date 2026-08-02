@@ -1,8 +1,14 @@
 import { Modal, Notice, App } from "obsidian";
 
-import { GitHubClient, GitHubRepositoryRef, GitHubApiError, WorkflowRun } from "./github";
+import { GitHubClient, GitHubRepositoryRef, GitHubApiError } from "./github";
 import { publishVault, PublishVaultResult } from "./publisher";
-import { pullLatest, PullLatestResult } from "./fetcher";
+import {
+  applyPull,
+  findOverwritten,
+  planPull,
+  unzipAsync,
+  PullPlan,
+} from "./fetcher";
 import type { PluginSettings } from "../settings";
 
 const DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
@@ -12,40 +18,98 @@ const SETUP_WORKFLOW = "setup.yml";
 const TRIGGER_WORKFLOW = "trigger.yml";
 const DEPLOY_WORKFLOW = "deploy.yml";
 
+/** Secrets the content repository needs after Setup (trigger chain). */
+const CONTENT_REQUIRED_SECRETS = ["PAT", "BLOG_REPO"] as const;
+/** Secrets the blog repository needs after Setup (build pulls the wiki). */
+const BLOG_REQUIRED_SECRETS = ["WIKI_URL", "PAT"] as const;
+
 export interface BlogServiceDeps {
   app: App;
   getSettings(): PluginSettings;
   saveSettings(changes: Partial<PluginSettings>): Promise<void>;
 }
 
-export interface ValidateResult {
-  login: string;
-  /** Resolved repository, or `null` when it could not be detected. */
+export interface RepoCheckResult {
+  /** Resolved repository reference, or `null` when it could not be detected. */
   repository: GitHubRepositoryRef | null;
-  setupSecretsPresent: boolean;
+  /** Whether the repository exists and is accessible. */
+  accessible: boolean;
+}
+
+export interface ReadyCheckResult {
+  /** Missing secrets in the content repository. */
+  contentMissing: string[];
+  /** Missing secrets in the blog repository. */
+  blogMissing: string[];
+  /** Whether the whole publish chain is ready. */
+  ready: boolean;
 }
 
 export class BlogService {
   constructor(private readonly deps: BlogServiceDeps) {}
 
-  /**
-   * Connectivity check: verifies the PAT and reports repository/setup
-   * state. A missing repository is not an error — Setup will create one.
-   */
-  async validate(): Promise<ValidateResult> {
-    const { pat } = this.requireSettings("验证");
-    const client = new GitHubClient(pat);
-    const user = await client.getAuthenticatedUser();
-    const repository = await this.detectRepository(client);
+  // ------------------------------------------------------------------
+  // Step checks: each is independent and only verifies its own concern.
+  // ------------------------------------------------------------------
 
-    let setupSecretsPresent = false;
-    if (repository) {
-      const secrets = await client.listSecrets(repository);
-      setupSecretsPresent = secrets.includes("SETUP_PAT") && secrets.includes("BLOG_REPO_NAME");
+  /** 1. PAT connectivity only. Returns the authenticated login. */
+  async checkPat(): Promise<string> {
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    return user.login;
+  }
+
+  /** 2. Content repository: resolve it, then verify access. */
+  async checkContentRepo(): Promise<RepoCheckResult> {
+    const client = this.client();
+    const repository = await this.detectRepository(client);
+    return { repository, accessible: repository !== null };
+  }
+
+  /** 3. Blog (theme) repository: resolve the name, then verify access. */
+  async checkBlogRepo(): Promise<RepoCheckResult> {
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const name = this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login);
+
+    try {
+      const repository = { owner: user.login, name };
+      await client.getRepository(repository);
+      return { repository, accessible: true };
+    } catch {
+      return { repository: { owner: user.login, name }, accessible: false };
+    }
+  }
+
+  /** 4. Readiness: are both repositories' secrets fully configured? */
+  async checkReady(): Promise<ReadyCheckResult> {
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+
+    const content = await this.detectRepository(client);
+    const contentMissing = content
+      ? missingSecrets(await client.listSecrets(content), CONTENT_REQUIRED_SECRETS)
+      : [...CONTENT_REQUIRED_SECRETS];
+
+    const blogName = this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login);
+    const blog = { owner: user.login, name: blogName };
+    let blogMissing: string[];
+    try {
+      blogMissing = missingSecrets(await client.listSecrets(blog), BLOG_REQUIRED_SECRETS);
+    } catch {
+      blogMissing = [...BLOG_REQUIRED_SECRETS];
     }
 
-    return { login: user.login, repository, setupSecretsPresent };
+    return {
+      contentMissing,
+      blogMissing,
+      ready: contentMissing.length === 0 && blogMissing.length === 0,
+    };
   }
+
+  // ------------------------------------------------------------------
+  // Actions.
+  // ------------------------------------------------------------------
 
   /**
    * Writes the setup inputs into Actions secrets (never into workflow
@@ -62,7 +126,7 @@ export class BlogService {
     if (!repository) {
       repository = await this.createRepository(client, user.login);
     }
-    const resolvedBlogRepoName = blogRepoName.trim() || `${user.login}.github.io`;
+    const resolvedBlogRepoName = this.resolveBlogRepoName(blogRepoName, user.login);
 
     await client.setActionsSecret(repository, "SETUP_PAT", pat);
     await client.setActionsSecret(repository, "BLOG_REPO_NAME", resolvedBlogRepoName);
@@ -99,17 +163,36 @@ export class BlogService {
     new Notice("已触发博客重建。");
   }
 
-  /** Replaces the Vault with the latest repository content. */
-  async pull(): Promise<PullLatestResult> {
+  /**
+   * Replaces the Vault with the latest repository content. Local-only files
+   * are always kept; if the remote would overwrite locally modified files,
+   * the user is asked first (conflict option).
+   */
+  async pull(): Promise<void> {
     const client = this.client();
     const repository = await this.requireRepository(client);
-    const result = await pullLatest({ vault: this.deps.app.vault, client, repository });
+
+    new Notice("正在拉取云端内容...");
+    const zip = await client.downloadZipball(repository);
+    const files = await unzipAsync(zip);
+    const plan: PullPlan = planPull(this.deps.app.vault, files);
+    const overwritten = await findOverwritten(this.deps.app.vault, files);
+
+    if (overwritten.length > 0) {
+      const confirmed = await confirmOverwrite(this.deps.app, overwritten);
+      if (!confirmed) {
+        new Notice("已取消拉取，本地修改未受影响。");
+        return;
+      }
+    }
+
+    const result = await applyPull(this.deps.app.vault, files, { ...plan, overwritten });
     new Notice(
-      result.changed
-        ? `拉取完成：更新 ${result.updated.length} 个文件，移除 ${result.deleted.length} 个。`
-        : "云端与本地已一致。",
+      `拉取完成：更新 ${result.updated.length} 个文件`
+      + (result.overwritten.length > 0 ? `，覆盖本地修改 ${result.overwritten.length} 个` : "")
+      + (plan.keptLocal.length > 0 ? `，保留本地独有 ${plan.keptLocal.length} 个` : "")
+      + "。",
     );
-    return result;
   }
 
   /**
@@ -139,15 +222,6 @@ export class BlogService {
       }
       return result;
     }
-  }
-
-  /** Force-publishes, discarding any remote changes. */
-  async forcePush(): Promise<PublishVaultResult> {
-    const result = await this.publishOnce(true);
-    if (result.changed) {
-      await this.notifyAndWaitDeploy();
-    }
-    return result;
   }
 
   private async publishOnce(force: boolean): Promise<PublishVaultResult> {
@@ -183,7 +257,7 @@ export class BlogService {
     new Notice("已发布，等待博客构建...");
     const startedAfter = new Date();
 
-    const blogRepo = { owner: repository.owner, name: blogRepoName.trim() || `${user.login}.github.io` };
+    const blogRepo = { owner: repository.owner, name: this.resolveBlogRepoName(blogRepoName, user.login) };
     try {
       const run = await client.waitForWorkflowRun(blogRepo, DEPLOY_WORKFLOW, {
         event: "repository_dispatch",
@@ -214,10 +288,14 @@ export class BlogService {
     return settings;
   }
 
+  private resolveBlogRepoName(value: string, login: string): string {
+    return value.trim() || `${login}.github.io`;
+  }
+
   private async requireRepository(client: GitHubClient): Promise<GitHubRepositoryRef> {
     const repository = await this.detectRepository(client);
     if (!repository) {
-      throw new Error("未识别到文章仓库。请先「触发 Setup」（会自动创建仓库），或在设置中填写仓库名。");
+      throw new Error("未识别到文章仓库。请先在设置中填写文章仓库名，或「触发 Setup」自动创建。");
     }
     return repository;
   }
@@ -292,6 +370,10 @@ export class BlogService {
   }
 }
 
+function missingSecrets(actual: readonly string[], required: readonly string[]): string[] {
+  return required.filter((name) => !actual.includes(name));
+}
+
 /** GitHub rejects a non-force ref update when the remote has moved ahead. */
 function isRefRejected(error: unknown): boolean {
   return error instanceof GitHubApiError && error.status === 422;
@@ -311,6 +393,41 @@ function parseRepoRef(value: string): GitHubRepositoryRef {
     throw new Error(`模板仓库格式应为 owner/repository：${value}`);
   }
   return { owner: match[1], name: match[2] };
+}
+
+function confirmOverwrite(app: App, paths: string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    const modal = new Modal(app);
+    modal.titleEl.setText("云端将覆盖本地修改");
+    modal.contentEl.createEl("p", {
+      text: `以下 ${paths.length} 个文件在本地有修改，拉取会用云端版本覆盖：`,
+    });
+    const listEl = modal.contentEl.createEl("ul");
+    for (const path of paths.slice(0, 8)) {
+      listEl.createEl("li", { text: path });
+    }
+    if (paths.length > 8) {
+      listEl.createEl("li", { text: `... 等共 ${paths.length} 个` });
+    }
+
+    const actionsEl = modal.contentEl.createDiv({ cls: "modal-button-container" });
+    const cancelButton = actionsEl.createEl("button", { text: "取消", type: "button" });
+    cancelButton.addEventListener("click", () => {
+      modal.close();
+      resolve(false);
+    });
+    const overwriteButton = actionsEl.createEl("button", {
+      text: "拉取并舍弃本地修改",
+      cls: "mod-warning",
+      type: "button",
+    });
+    overwriteButton.addEventListener("click", () => {
+      modal.close();
+      resolve(true);
+    });
+
+    modal.open();
+  });
 }
 
 function confirmForcePush(app: App): Promise<boolean> {
@@ -343,8 +460,4 @@ function confirmForcePush(app: App): Promise<boolean> {
 
     modal.open();
   });
-}
-
-export function runConclusionText(run: WorkflowRun): string {
-  return run.conclusion ?? run.status;
 }

@@ -1,6 +1,7 @@
 import {
 	App,
 	ButtonComponent,
+	ExtraButtonComponent,
 	Notice,
 	Plugin,
 	PluginSettingTab,
@@ -8,11 +9,13 @@ import {
 	TextComponent,
 } from "obsidian";
 
+import type { RepoCheckResult, ReadyCheckResult } from "./services/blog";
+
 export interface PluginSettings {
 	pat: string;
 	/** Current content repository name (the vault's own repository). */
 	repoName: string;
-	/** Public blog repository name, used by the Setup workflow. */
+	/** Public blog (theme) repository name. */
 	blogRepoName: string;
 	/** Theme source repository, used by the Setup workflow. */
 	themeRepo: string;
@@ -35,12 +38,18 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 };
 
 export interface PublisherSettingsActions {
-	onValidate(): Promise<unknown>;
+	/** Step 1: PAT connectivity only; resolves to the authenticated login. */
+	onCheckPat(): Promise<string>;
+	/** Step 2: content repository resolution + access. */
+	onCheckContentRepo(): Promise<RepoCheckResult>;
+	/** Step 3: blog (theme) repository access. */
+	onCheckBlogRepo(): Promise<RepoCheckResult>;
+	/** Step 4: both repositories' secrets completeness. */
+	onCheckReady(): Promise<ReadyCheckResult>;
 	onSetup(): Promise<unknown>;
 	onTrigger(): Promise<unknown>;
 	onPull(): Promise<unknown>;
 	onPush(): Promise<unknown>;
-	onForcePush(): Promise<unknown>;
 }
 
 type SaveSettings = (changes: Partial<PluginSettings>) => Promise<void>;
@@ -66,37 +75,92 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		containerEl.createEl("h2", { text: "VitePress Butterfly 发布" });
 		containerEl.createEl("p", {
-			text: "当前 Vault 就是文章仓库。填入 GitHub PAT 后即可触发 Setup、发布文章、拉取更新，全程无需安装 Git。",
+			text: "当前 Vault 就是文章仓库。依次完成下方四步检测后即可发布，无需安装 Git。",
 		});
 
 		const settings = this.getSettings();
 
+		// --- Step 1: PAT ---
+		const patStatus = this.createStatus(containerEl);
 		new Setting(containerEl)
 			.setName("GitHub PAT")
-			.setDesc("需要 repo + workflow 权限。仅保存在本机插件设置中，不会上传。")
+			.setDesc("需要 repo + workflow 权限，仅保存在本机。")
 			.addText((text) => {
 				text.inputEl.type = "password";
 				text.inputEl.autocomplete = "off";
 				text.inputEl.spellcheck = false;
 				this.bindText(text, "pat", settings.pat, (value) => value.trim());
+			})
+			.addExtraButton((button) => {
+				this.addCheckButton(button, "检测连通性", () => this.actions.onCheckPat().then(
+					(login) => this.setStatus(patStatus, "ok", `✓ 已连接 @${login}`),
+					(error) => this.setStatus(patStatus, "error", this.errorMessage(error, "✗ 连接失败")),
+				));
 			});
 
+		// --- Step 2: content repository ---
+		const contentStatus = this.createStatus(containerEl);
 		new Setting(containerEl)
-			.setName("文章仓库名")
-			.setDesc("留空时自动识别（Git 克隆目录或 Vault 名称匹配）；首次 Setup 未识别到时会以该名称创建仓库，默认使用 Vault 名称。")
+			.setName("博客文章仓库")
+			.setDesc("当前 Vault 对应的文章仓库；留空自动识别（Git 克隆目录或 Vault 名称）。")
 			.addText((text) => {
 				text.setPlaceholder("自动识别");
 				this.bindText(text, "repoName", settings.repoName, (value) => value.trim());
+			})
+			.addExtraButton((button) => {
+				this.addCheckButton(button, "检测仓库", () => this.actions.onCheckContentRepo().then(
+					(result) => this.setStatus(
+						contentStatus,
+						result.accessible ? "ok" : "warn",
+						result.accessible
+							? `✓ 可访问 ${result.repository?.owner}/${result.repository?.name}`
+							: "未识别到可访问的仓库（触发 Setup 会自动创建）",
+					),
+					(error) => this.setStatus(contentStatus, "error", this.errorMessage(error, "✗ 检测失败")),
+				));
 			});
 
+		// --- Step 3: blog (theme) repository ---
+		const blogStatus = this.createStatus(containerEl);
 		new Setting(containerEl)
-			.setName("博客仓库名")
-			.setDesc("Setup 工作流创建的公开博客仓库名；留空则使用 你的用户名.github.io。")
+			.setName("博客样式仓库")
+			.setDesc("Setup 创建的公开博客仓库；留空默认 你的用户名.github.io。")
 			.addText((text) => {
 				text.setPlaceholder("yourname.github.io");
 				this.bindText(text, "blogRepoName", settings.blogRepoName, (value) => value.trim());
+			})
+			.addExtraButton((button) => {
+				this.addCheckButton(button, "检测仓库", () => this.actions.onCheckBlogRepo().then(
+					(result) => this.setStatus(
+						blogStatus,
+						result.accessible ? "ok" : "warn",
+						result.accessible
+							? `✓ 可访问 ${result.repository?.owner}/${result.repository?.name}`
+							: "仓库不存在（触发 Setup 时会创建）",
+					),
+					(error) => this.setStatus(blogStatus, "error", this.errorMessage(error, "✗ 检测失败")),
+				));
 			});
 
+		// --- Step 4: readiness ---
+		const readyStatus = this.createStatus(containerEl);
+		new Setting(containerEl)
+			.setName("就绪检测")
+			.setDesc("检查两个仓库的 Actions secrets 是否完整配置。")
+			.addExtraButton((button) => {
+				this.addCheckButton(button, "检测就绪状态", () => this.actions.onCheckReady().then(
+					(result) => this.setStatus(
+						readyStatus,
+						result.ready ? "ok" : "warn",
+						result.ready
+							? "✓ 全部就绪，推送即可自动部署"
+							: this.readinessText(result),
+					),
+					(error) => this.setStatus(readyStatus, "error", this.errorMessage(error, "✗ 检测失败")),
+				));
+			});
+
+		// --- Advanced ---
 		new Setting(containerEl)
 			.setName("主题仓库")
 			.setDesc("Setup 工作流 fork 的主题源仓库，一般无需修改。")
@@ -125,13 +189,51 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				});
 			});
 
+		// --- Actions ---
 		containerEl.createEl("h3", { text: "操作" });
-		this.addAction(containerEl, "验证配置", "检查 PAT 与仓库访问，并显示 Setup 状态。", "验证中...", this.actions.onValidate);
-		this.addAction(containerEl, "触发 Setup", "配置 Actions secrets 并运行 Setup 工作流，创建博客仓库。", "Setup 运行中...", this.actions.onSetup);
-		this.addAction(containerEl, "拉取最新", "用云端 main 分支内容覆盖当前 Vault（本地未发布内容移入回收站）。", "拉取中...", this.actions.onPull);
-		this.addAction(containerEl, "推送发布", "将 Vault 变更提交到云端并触发博客构建；云端有更新时会询问。", "发布中...", this.actions.onPush, true);
-		this.addAction(containerEl, "强制推送", "放弃云端已有更新，直接用本地内容覆盖（谨慎）。", "强制发布中...", this.actions.onForcePush);
+		this.addAction(containerEl, "触发 Setup", "创建博客仓库并配置全部 secrets 与部署。", "Setup 运行中...", this.actions.onSetup);
+		this.addAction(containerEl, "拉取最新", "用云端内容更新 Vault；本地独有文件保留，覆盖本地修改前会询问。", "拉取中...", this.actions.onPull);
+		this.addAction(containerEl, "推送发布", "将 Vault 变更提交到云端并等待博客部署；云端有更新时会询问。", "发布中...", this.actions.onPush, true);
 		this.addAction(containerEl, "触发部署", "不发布内容，仅通知博客仓库重新构建部署。", "触发中...", this.actions.onTrigger);
+	}
+
+	private createStatus(containerEl: HTMLElement): HTMLSpanElement {
+		const span = containerEl.createSpan({ cls: "vitepress-butterfly-check-status" });
+		span.textContent = "未检测";
+		return span;
+	}
+
+	private setStatus(
+		el: HTMLSpanElement,
+		kind: "ok" | "warn" | "error",
+		message: string,
+	): void {
+		el.textContent = message;
+		el.removeClass("vpb-ok", "vpb-warn", "vpb-error");
+		el.addClass(kind === "ok" ? "vpb-ok" : kind === "warn" ? "vpb-warn" : "vpb-error");
+	}
+
+	private addCheckButton(
+		button: ExtraButtonComponent,
+		tooltip: string,
+		run: () => Promise<void>,
+	): void {
+		button.setIcon("search").setTooltip(tooltip);
+		button.onClick(() => {
+			button.setDisabled(true);
+			void run().finally(() => button.setDisabled(false));
+		});
+	}
+
+	private readinessText(result: ReadyCheckResult): string {
+		const parts: string[] = [];
+		if (result.contentMissing.length > 0) {
+			parts.push(`文章仓库缺：${result.contentMissing.join("、")}`);
+		}
+		if (result.blogMissing.length > 0) {
+			parts.push(`样式仓库缺：${result.blogMissing.join("、")}`);
+		}
+		return `未就绪（${parts.join("；")}），请先触发 Setup`;
 	}
 
 	private bindText(

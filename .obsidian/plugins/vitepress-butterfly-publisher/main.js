@@ -2297,22 +2297,59 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.actionButtons = [];
     containerEl.createEl("h2", { text: "VitePress Butterfly \u53D1\u5E03" });
     containerEl.createEl("p", {
-      text: "\u5F53\u524D Vault \u5C31\u662F\u6587\u7AE0\u4ED3\u5E93\u3002\u586B\u5165 GitHub PAT \u540E\u5373\u53EF\u89E6\u53D1 Setup\u3001\u53D1\u5E03\u6587\u7AE0\u3001\u62C9\u53D6\u66F4\u65B0\uFF0C\u5168\u7A0B\u65E0\u9700\u5B89\u88C5 Git\u3002"
+      text: "\u5F53\u524D Vault \u5C31\u662F\u6587\u7AE0\u4ED3\u5E93\u3002\u4F9D\u6B21\u5B8C\u6210\u4E0B\u65B9\u56DB\u6B65\u68C0\u6D4B\u540E\u5373\u53EF\u53D1\u5E03\uFF0C\u65E0\u9700\u5B89\u88C5 Git\u3002"
     });
     const settings = this.getSettings();
-    new import_obsidian.Setting(containerEl).setName("GitHub PAT").setDesc("\u9700\u8981 repo + workflow \u6743\u9650\u3002\u4EC5\u4FDD\u5B58\u5728\u672C\u673A\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\uFF0C\u4E0D\u4F1A\u4E0A\u4F20\u3002").addText((text) => {
+    const patStatus = this.createStatus(containerEl);
+    new import_obsidian.Setting(containerEl).setName("GitHub PAT").setDesc("\u9700\u8981 repo + workflow \u6743\u9650\uFF0C\u4EC5\u4FDD\u5B58\u5728\u672C\u673A\u3002").addText((text) => {
       text.inputEl.type = "password";
       text.inputEl.autocomplete = "off";
       text.inputEl.spellcheck = false;
       this.bindText(text, "pat", settings.pat, (value) => value.trim());
+    }).addExtraButton((button) => {
+      this.addCheckButton(button, "\u68C0\u6D4B\u8FDE\u901A\u6027", () => this.actions.onCheckPat().then(
+        (login) => this.setStatus(patStatus, "ok", `\u2713 \u5DF2\u8FDE\u63A5 @${login}`),
+        (error) => this.setStatus(patStatus, "error", this.errorMessage(error, "\u2717 \u8FDE\u63A5\u5931\u8D25"))
+      ));
     });
-    new import_obsidian.Setting(containerEl).setName("\u6587\u7AE0\u4ED3\u5E93\u540D").setDesc("\u7559\u7A7A\u65F6\u81EA\u52A8\u8BC6\u522B\uFF08Git \u514B\u9686\u76EE\u5F55\u6216 Vault \u540D\u79F0\u5339\u914D\uFF09\uFF1B\u9996\u6B21 Setup \u672A\u8BC6\u522B\u5230\u65F6\u4F1A\u4EE5\u8BE5\u540D\u79F0\u521B\u5EFA\u4ED3\u5E93\uFF0C\u9ED8\u8BA4\u4F7F\u7528 Vault \u540D\u79F0\u3002").addText((text) => {
+    const contentStatus = this.createStatus(containerEl);
+    new import_obsidian.Setting(containerEl).setName("\u535A\u5BA2\u6587\u7AE0\u4ED3\u5E93").setDesc("\u5F53\u524D Vault \u5BF9\u5E94\u7684\u6587\u7AE0\u4ED3\u5E93\uFF1B\u7559\u7A7A\u81EA\u52A8\u8BC6\u522B\uFF08Git \u514B\u9686\u76EE\u5F55\u6216 Vault \u540D\u79F0\uFF09\u3002").addText((text) => {
       text.setPlaceholder("\u81EA\u52A8\u8BC6\u522B");
       this.bindText(text, "repoName", settings.repoName, (value) => value.trim());
+    }).addExtraButton((button) => {
+      this.addCheckButton(button, "\u68C0\u6D4B\u4ED3\u5E93", () => this.actions.onCheckContentRepo().then(
+        (result) => this.setStatus(
+          contentStatus,
+          result.accessible ? "ok" : "warn",
+          result.accessible ? `\u2713 \u53EF\u8BBF\u95EE ${result.repository?.owner}/${result.repository?.name}` : "\u672A\u8BC6\u522B\u5230\u53EF\u8BBF\u95EE\u7684\u4ED3\u5E93\uFF08\u89E6\u53D1 Setup \u4F1A\u81EA\u52A8\u521B\u5EFA\uFF09"
+        ),
+        (error) => this.setStatus(contentStatus, "error", this.errorMessage(error, "\u2717 \u68C0\u6D4B\u5931\u8D25"))
+      ));
     });
-    new import_obsidian.Setting(containerEl).setName("\u535A\u5BA2\u4ED3\u5E93\u540D").setDesc("Setup \u5DE5\u4F5C\u6D41\u521B\u5EFA\u7684\u516C\u5F00\u535A\u5BA2\u4ED3\u5E93\u540D\uFF1B\u7559\u7A7A\u5219\u4F7F\u7528 \u4F60\u7684\u7528\u6237\u540D.github.io\u3002").addText((text) => {
+    const blogStatus = this.createStatus(containerEl);
+    new import_obsidian.Setting(containerEl).setName("\u535A\u5BA2\u6837\u5F0F\u4ED3\u5E93").setDesc("Setup \u521B\u5EFA\u7684\u516C\u5F00\u535A\u5BA2\u4ED3\u5E93\uFF1B\u7559\u7A7A\u9ED8\u8BA4 \u4F60\u7684\u7528\u6237\u540D.github.io\u3002").addText((text) => {
       text.setPlaceholder("yourname.github.io");
       this.bindText(text, "blogRepoName", settings.blogRepoName, (value) => value.trim());
+    }).addExtraButton((button) => {
+      this.addCheckButton(button, "\u68C0\u6D4B\u4ED3\u5E93", () => this.actions.onCheckBlogRepo().then(
+        (result) => this.setStatus(
+          blogStatus,
+          result.accessible ? "ok" : "warn",
+          result.accessible ? `\u2713 \u53EF\u8BBF\u95EE ${result.repository?.owner}/${result.repository?.name}` : "\u4ED3\u5E93\u4E0D\u5B58\u5728\uFF08\u89E6\u53D1 Setup \u65F6\u4F1A\u521B\u5EFA\uFF09"
+        ),
+        (error) => this.setStatus(blogStatus, "error", this.errorMessage(error, "\u2717 \u68C0\u6D4B\u5931\u8D25"))
+      ));
+    });
+    const readyStatus = this.createStatus(containerEl);
+    new import_obsidian.Setting(containerEl).setName("\u5C31\u7EEA\u68C0\u6D4B").setDesc("\u68C0\u67E5\u4E24\u4E2A\u4ED3\u5E93\u7684 Actions secrets \u662F\u5426\u5B8C\u6574\u914D\u7F6E\u3002").addExtraButton((button) => {
+      this.addCheckButton(button, "\u68C0\u6D4B\u5C31\u7EEA\u72B6\u6001", () => this.actions.onCheckReady().then(
+        (result) => this.setStatus(
+          readyStatus,
+          result.ready ? "ok" : "warn",
+          result.ready ? "\u2713 \u5168\u90E8\u5C31\u7EEA\uFF0C\u63A8\u9001\u5373\u53EF\u81EA\u52A8\u90E8\u7F72" : this.readinessText(result)
+        ),
+        (error) => this.setStatus(readyStatus, "error", this.errorMessage(error, "\u2717 \u68C0\u6D4B\u5931\u8D25"))
+      ));
     });
     new import_obsidian.Setting(containerEl).setName("\u4E3B\u9898\u4ED3\u5E93").setDesc("Setup \u5DE5\u4F5C\u6D41 fork \u7684\u4E3B\u9898\u6E90\u4ED3\u5E93\uFF0C\u4E00\u822C\u65E0\u9700\u4FEE\u6539\u3002").addText((text) => {
       text.setPlaceholder("57Darling02/VitePress_butterfly");
@@ -2331,12 +2368,37 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       });
     });
     containerEl.createEl("h3", { text: "\u64CD\u4F5C" });
-    this.addAction(containerEl, "\u9A8C\u8BC1\u914D\u7F6E", "\u68C0\u67E5 PAT \u4E0E\u4ED3\u5E93\u8BBF\u95EE\uFF0C\u5E76\u663E\u793A Setup \u72B6\u6001\u3002", "\u9A8C\u8BC1\u4E2D...", this.actions.onValidate);
-    this.addAction(containerEl, "\u89E6\u53D1 Setup", "\u914D\u7F6E Actions secrets \u5E76\u8FD0\u884C Setup \u5DE5\u4F5C\u6D41\uFF0C\u521B\u5EFA\u535A\u5BA2\u4ED3\u5E93\u3002", "Setup \u8FD0\u884C\u4E2D...", this.actions.onSetup);
-    this.addAction(containerEl, "\u62C9\u53D6\u6700\u65B0", "\u7528\u4E91\u7AEF main \u5206\u652F\u5185\u5BB9\u8986\u76D6\u5F53\u524D Vault\uFF08\u672C\u5730\u672A\u53D1\u5E03\u5185\u5BB9\u79FB\u5165\u56DE\u6536\u7AD9\uFF09\u3002", "\u62C9\u53D6\u4E2D...", this.actions.onPull);
-    this.addAction(containerEl, "\u63A8\u9001\u53D1\u5E03", "\u5C06 Vault \u53D8\u66F4\u63D0\u4EA4\u5230\u4E91\u7AEF\u5E76\u89E6\u53D1\u535A\u5BA2\u6784\u5EFA\uFF1B\u4E91\u7AEF\u6709\u66F4\u65B0\u65F6\u4F1A\u8BE2\u95EE\u3002", "\u53D1\u5E03\u4E2D...", this.actions.onPush, true);
-    this.addAction(containerEl, "\u5F3A\u5236\u63A8\u9001", "\u653E\u5F03\u4E91\u7AEF\u5DF2\u6709\u66F4\u65B0\uFF0C\u76F4\u63A5\u7528\u672C\u5730\u5185\u5BB9\u8986\u76D6\uFF08\u8C28\u614E\uFF09\u3002", "\u5F3A\u5236\u53D1\u5E03\u4E2D...", this.actions.onForcePush);
+    this.addAction(containerEl, "\u89E6\u53D1 Setup", "\u521B\u5EFA\u535A\u5BA2\u4ED3\u5E93\u5E76\u914D\u7F6E\u5168\u90E8 secrets \u4E0E\u90E8\u7F72\u3002", "Setup \u8FD0\u884C\u4E2D...", this.actions.onSetup);
+    this.addAction(containerEl, "\u62C9\u53D6\u6700\u65B0", "\u7528\u4E91\u7AEF\u5185\u5BB9\u66F4\u65B0 Vault\uFF1B\u672C\u5730\u72EC\u6709\u6587\u4EF6\u4FDD\u7559\uFF0C\u8986\u76D6\u672C\u5730\u4FEE\u6539\u524D\u4F1A\u8BE2\u95EE\u3002", "\u62C9\u53D6\u4E2D...", this.actions.onPull);
+    this.addAction(containerEl, "\u63A8\u9001\u53D1\u5E03", "\u5C06 Vault \u53D8\u66F4\u63D0\u4EA4\u5230\u4E91\u7AEF\u5E76\u7B49\u5F85\u535A\u5BA2\u90E8\u7F72\uFF1B\u4E91\u7AEF\u6709\u66F4\u65B0\u65F6\u4F1A\u8BE2\u95EE\u3002", "\u53D1\u5E03\u4E2D...", this.actions.onPush, true);
     this.addAction(containerEl, "\u89E6\u53D1\u90E8\u7F72", "\u4E0D\u53D1\u5E03\u5185\u5BB9\uFF0C\u4EC5\u901A\u77E5\u535A\u5BA2\u4ED3\u5E93\u91CD\u65B0\u6784\u5EFA\u90E8\u7F72\u3002", "\u89E6\u53D1\u4E2D...", this.actions.onTrigger);
+  }
+  createStatus(containerEl) {
+    const span = containerEl.createSpan({ cls: "vitepress-butterfly-check-status" });
+    span.textContent = "\u672A\u68C0\u6D4B";
+    return span;
+  }
+  setStatus(el, kind, message) {
+    el.textContent = message;
+    el.removeClass("vpb-ok", "vpb-warn", "vpb-error");
+    el.addClass(kind === "ok" ? "vpb-ok" : kind === "warn" ? "vpb-warn" : "vpb-error");
+  }
+  addCheckButton(button, tooltip, run) {
+    button.setIcon("search").setTooltip(tooltip);
+    button.onClick(() => {
+      button.setDisabled(true);
+      void run().finally(() => button.setDisabled(false));
+    });
+  }
+  readinessText(result) {
+    const parts = [];
+    if (result.contentMissing.length > 0) {
+      parts.push(`\u6587\u7AE0\u4ED3\u5E93\u7F3A\uFF1A${result.contentMissing.join("\u3001")}`);
+    }
+    if (result.blogMissing.length > 0) {
+      parts.push(`\u6837\u5F0F\u4ED3\u5E93\u7F3A\uFF1A${result.blogMissing.join("\u3001")}`);
+    }
+    return `\u672A\u5C31\u7EEA\uFF08${parts.join("\uFF1B")}\uFF09\uFF0C\u8BF7\u5148\u89E6\u53D1 Setup`;
   }
   bindText(text, key, value, normalize) {
     text.setValue(value);
@@ -4183,36 +4245,66 @@ function unzip(data, opts, cb) {
 }
 
 // src/services/fetcher.ts
-async function pullLatest(options) {
-  const zip = await options.client.downloadZipball(options.repository);
-  const files = await unzipAsync(zip);
-  const updated = [];
-  const deleted = [];
+function planPull(vault, files) {
   const remotePaths = /* @__PURE__ */ new Set();
-  for (const [zipPath, content] of Object.entries(files)) {
+  const toWrite = [];
+  for (const [zipPath] of Object.entries(files)) {
     const path = stripRootDirectory(zipPath);
     if (!path || isExcludedPath(path)) {
       continue;
     }
     remotePaths.add(path);
-    const data = toArrayBuffer(content);
-    const existing = options.vault.getFileByPath(path);
-    if (existing) {
-      await options.vault.modifyBinary(existing, data);
-    } else {
-      await ensureParentFolder(options.vault, path);
-      await options.vault.createBinary(path, data);
+    if (!vault.getFileByPath(path)) {
+      toWrite.push(path);
     }
-    updated.push(path);
   }
-  for (const file of options.vault.getFiles()) {
-    if (remotePaths.has(file.path) || isExcludedPath(file.path)) {
+  const keptLocal = vault.getFiles().map((file) => file.path).filter((path) => !remotePaths.has(path) && !isExcludedPath(path)).sort();
+  return { toWrite, overwritten: [], keptLocal };
+}
+async function findOverwritten(vault, files) {
+  const overwritten = [];
+  for (const [zipPath, content] of Object.entries(files)) {
+    const path = stripRootDirectory(zipPath);
+    if (!path || isExcludedPath(path)) {
       continue;
     }
-    await options.vault.trash(file, false);
-    deleted.push(file.path);
+    const existing = vault.getFileByPath(path);
+    if (existing && !await fileMatches(existing, content)) {
+      overwritten.push(path);
+    }
   }
-  return { changed: updated.length > 0 || deleted.length > 0, updated, deleted };
+  return overwritten.sort();
+}
+async function applyPull(vault, files, plan) {
+  const updated = [];
+  for (const [zipPath, content] of Object.entries(files)) {
+    const path = stripRootDirectory(zipPath);
+    if (!path || isExcludedPath(path)) {
+      continue;
+    }
+    const existing = vault.getFileByPath(path);
+    if (!existing) {
+      await ensureParentFolder(vault, path);
+      await vault.createBinary(path, toArrayBuffer(content));
+      updated.push(path);
+    } else if (plan.overwritten.includes(path) || !await fileMatches(existing, content)) {
+      await vault.modifyBinary(existing, toArrayBuffer(content));
+      updated.push(path);
+    }
+  }
+  return { updated, overwritten: plan.overwritten };
+}
+async function fileMatches(file, content) {
+  const local = new Uint8Array(await file.vault.readBinary(file));
+  if (local.byteLength !== content.byteLength) {
+    return false;
+  }
+  for (let index = 0; index < local.byteLength; index += 1) {
+    if (local[index] !== content[index]) {
+      return false;
+    }
+  }
+  return true;
 }
 function unzipAsync(data) {
   return new Promise((resolve, reject) => {
@@ -4224,9 +4316,6 @@ function unzipAsync(data) {
       }
     });
   });
-}
-function toArrayBuffer(data) {
-  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
 }
 function stripRootDirectory(path) {
   const withoutTrailingSlash = path.endsWith("/") ? path.slice(0, -1) : path;
@@ -4249,6 +4338,9 @@ async function ensureParentFolder(vault, path) {
     }
   }
 }
+function toArrayBuffer(data) {
+  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+}
 
 // src/services/blog.ts
 var DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
@@ -4257,26 +4349,63 @@ var SETUP_SECRETS = ["SETUP_PAT", "BLOG_REPO_NAME", "THEME_REPO", "CONFIGURE_PAG
 var SETUP_WORKFLOW = "setup.yml";
 var TRIGGER_WORKFLOW = "trigger.yml";
 var DEPLOY_WORKFLOW = "deploy.yml";
+var CONTENT_REQUIRED_SECRETS = ["PAT", "BLOG_REPO"];
+var BLOG_REQUIRED_SECRETS = ["WIKI_URL", "PAT"];
 var BlogService = class {
   constructor(deps) {
     this.deps = deps;
   }
-  /**
-   * Connectivity check: verifies the PAT and reports repository/setup
-   * state. A missing repository is not an error — Setup will create one.
-   */
-  async validate() {
-    const { pat } = this.requireSettings("\u9A8C\u8BC1");
-    const client = new GitHubClient(pat);
+  // ------------------------------------------------------------------
+  // Step checks: each is independent and only verifies its own concern.
+  // ------------------------------------------------------------------
+  /** 1. PAT connectivity only. Returns the authenticated login. */
+  async checkPat() {
+    const client = this.client();
     const user = await client.getAuthenticatedUser();
-    const repository = await this.detectRepository(client);
-    let setupSecretsPresent = false;
-    if (repository) {
-      const secrets = await client.listSecrets(repository);
-      setupSecretsPresent = secrets.includes("SETUP_PAT") && secrets.includes("BLOG_REPO_NAME");
-    }
-    return { login: user.login, repository, setupSecretsPresent };
+    return user.login;
   }
+  /** 2. Content repository: resolve it, then verify access. */
+  async checkContentRepo() {
+    const client = this.client();
+    const repository = await this.detectRepository(client);
+    return { repository, accessible: repository !== null };
+  }
+  /** 3. Blog (theme) repository: resolve the name, then verify access. */
+  async checkBlogRepo() {
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const name = this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login);
+    try {
+      const repository = { owner: user.login, name };
+      await client.getRepository(repository);
+      return { repository, accessible: true };
+    } catch {
+      return { repository: { owner: user.login, name }, accessible: false };
+    }
+  }
+  /** 4. Readiness: are both repositories' secrets fully configured? */
+  async checkReady() {
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const content = await this.detectRepository(client);
+    const contentMissing = content ? missingSecrets(await client.listSecrets(content), CONTENT_REQUIRED_SECRETS) : [...CONTENT_REQUIRED_SECRETS];
+    const blogName = this.resolveBlogRepoName(this.deps.getSettings().blogRepoName, user.login);
+    const blog = { owner: user.login, name: blogName };
+    let blogMissing;
+    try {
+      blogMissing = missingSecrets(await client.listSecrets(blog), BLOG_REQUIRED_SECRETS);
+    } catch {
+      blogMissing = [...BLOG_REQUIRED_SECRETS];
+    }
+    return {
+      contentMissing,
+      blogMissing,
+      ready: contentMissing.length === 0 && blogMissing.length === 0
+    };
+  }
+  // ------------------------------------------------------------------
+  // Actions.
+  // ------------------------------------------------------------------
   /**
    * Writes the setup inputs into Actions secrets (never into workflow
    * dispatch inputs), runs the Setup Blog workflow, then removes the
@@ -4291,7 +4420,7 @@ var BlogService = class {
     if (!repository) {
       repository = await this.createRepository(client, user.login);
     }
-    const resolvedBlogRepoName = blogRepoName.trim() || `${user.login}.github.io`;
+    const resolvedBlogRepoName = this.resolveBlogRepoName(blogRepoName, user.login);
     await client.setActionsSecret(repository, "SETUP_PAT", pat);
     await client.setActionsSecret(repository, "BLOG_REPO_NAME", resolvedBlogRepoName);
     await client.setActionsSecret(repository, "THEME_REPO", themeRepo.trim() || DEFAULT_THEME_REPO);
@@ -4322,15 +4451,30 @@ var BlogService = class {
     await client.dispatchWorkflow(repository, TRIGGER_WORKFLOW);
     new import_obsidian3.Notice("\u5DF2\u89E6\u53D1\u535A\u5BA2\u91CD\u5EFA\u3002");
   }
-  /** Replaces the Vault with the latest repository content. */
+  /**
+   * Replaces the Vault with the latest repository content. Local-only files
+   * are always kept; if the remote would overwrite locally modified files,
+   * the user is asked first (conflict option).
+   */
   async pull() {
     const client = this.client();
     const repository = await this.requireRepository(client);
-    const result = await pullLatest({ vault: this.deps.app.vault, client, repository });
+    new import_obsidian3.Notice("\u6B63\u5728\u62C9\u53D6\u4E91\u7AEF\u5185\u5BB9...");
+    const zip = await client.downloadZipball(repository);
+    const files = await unzipAsync(zip);
+    const plan = planPull(this.deps.app.vault, files);
+    const overwritten = await findOverwritten(this.deps.app.vault, files);
+    if (overwritten.length > 0) {
+      const confirmed = await confirmOverwrite(this.deps.app, overwritten);
+      if (!confirmed) {
+        new import_obsidian3.Notice("\u5DF2\u53D6\u6D88\u62C9\u53D6\uFF0C\u672C\u5730\u4FEE\u6539\u672A\u53D7\u5F71\u54CD\u3002");
+        return;
+      }
+    }
+    const result = await applyPull(this.deps.app.vault, files, { ...plan, overwritten });
     new import_obsidian3.Notice(
-      result.changed ? `\u62C9\u53D6\u5B8C\u6210\uFF1A\u66F4\u65B0 ${result.updated.length} \u4E2A\u6587\u4EF6\uFF0C\u79FB\u9664 ${result.deleted.length} \u4E2A\u3002` : "\u4E91\u7AEF\u4E0E\u672C\u5730\u5DF2\u4E00\u81F4\u3002"
+      `\u62C9\u53D6\u5B8C\u6210\uFF1A\u66F4\u65B0 ${result.updated.length} \u4E2A\u6587\u4EF6` + (result.overwritten.length > 0 ? `\uFF0C\u8986\u76D6\u672C\u5730\u4FEE\u6539 ${result.overwritten.length} \u4E2A` : "") + (plan.keptLocal.length > 0 ? `\uFF0C\u4FDD\u7559\u672C\u5730\u72EC\u6709 ${plan.keptLocal.length} \u4E2A` : "") + "\u3002"
     );
-    return result;
   }
   /**
    * Publishes the Vault. When the remote has moved ahead, the ref update
@@ -4358,14 +4502,6 @@ var BlogService = class {
       return result;
     }
   }
-  /** Force-publishes, discarding any remote changes. */
-  async forcePush() {
-    const result = await this.publishOnce(true);
-    if (result.changed) {
-      await this.notifyAndWaitDeploy();
-    }
-    return result;
-  }
   async publishOnce(force) {
     const client = this.client();
     const repository = await this.requireRepository(client);
@@ -4392,7 +4528,7 @@ var BlogService = class {
     const user = await client.getAuthenticatedUser();
     new import_obsidian3.Notice("\u5DF2\u53D1\u5E03\uFF0C\u7B49\u5F85\u535A\u5BA2\u6784\u5EFA...");
     const startedAfter = /* @__PURE__ */ new Date();
-    const blogRepo = { owner: repository.owner, name: blogRepoName.trim() || `${user.login}.github.io` };
+    const blogRepo = { owner: repository.owner, name: this.resolveBlogRepoName(blogRepoName, user.login) };
     try {
       const run = await client.waitForWorkflowRun(blogRepo, DEPLOY_WORKFLOW, {
         event: "repository_dispatch",
@@ -4420,10 +4556,13 @@ var BlogService = class {
     }
     return settings;
   }
+  resolveBlogRepoName(value, login) {
+    return value.trim() || `${login}.github.io`;
+  }
   async requireRepository(client) {
     const repository = await this.detectRepository(client);
     if (!repository) {
-      throw new Error("\u672A\u8BC6\u522B\u5230\u6587\u7AE0\u4ED3\u5E93\u3002\u8BF7\u5148\u300C\u89E6\u53D1 Setup\u300D\uFF08\u4F1A\u81EA\u52A8\u521B\u5EFA\u4ED3\u5E93\uFF09\uFF0C\u6216\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u4ED3\u5E93\u540D\u3002");
+      throw new Error("\u672A\u8BC6\u522B\u5230\u6587\u7AE0\u4ED3\u5E93\u3002\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u6587\u7AE0\u4ED3\u5E93\u540D\uFF0C\u6216\u300C\u89E6\u53D1 Setup\u300D\u81EA\u52A8\u521B\u5EFA\u3002");
     }
     return repository;
   }
@@ -4484,6 +4623,9 @@ var BlogService = class {
     return null;
   }
 };
+function missingSecrets(actual, required) {
+  return required.filter((name) => !actual.includes(name));
+}
 function isRefRejected(error) {
   return error instanceof GitHubApiError && error.status === 422;
 }
@@ -4497,6 +4639,38 @@ function parseRepoRef(value) {
     throw new Error(`\u6A21\u677F\u4ED3\u5E93\u683C\u5F0F\u5E94\u4E3A owner/repository\uFF1A${value}`);
   }
   return { owner: match[1], name: match[2] };
+}
+function confirmOverwrite(app, paths) {
+  return new Promise((resolve) => {
+    const modal = new import_obsidian3.Modal(app);
+    modal.titleEl.setText("\u4E91\u7AEF\u5C06\u8986\u76D6\u672C\u5730\u4FEE\u6539");
+    modal.contentEl.createEl("p", {
+      text: `\u4EE5\u4E0B ${paths.length} \u4E2A\u6587\u4EF6\u5728\u672C\u5730\u6709\u4FEE\u6539\uFF0C\u62C9\u53D6\u4F1A\u7528\u4E91\u7AEF\u7248\u672C\u8986\u76D6\uFF1A`
+    });
+    const listEl = modal.contentEl.createEl("ul");
+    for (const path of paths.slice(0, 8)) {
+      listEl.createEl("li", { text: path });
+    }
+    if (paths.length > 8) {
+      listEl.createEl("li", { text: `... \u7B49\u5171 ${paths.length} \u4E2A` });
+    }
+    const actionsEl = modal.contentEl.createDiv({ cls: "modal-button-container" });
+    const cancelButton = actionsEl.createEl("button", { text: "\u53D6\u6D88", type: "button" });
+    cancelButton.addEventListener("click", () => {
+      modal.close();
+      resolve(false);
+    });
+    const overwriteButton = actionsEl.createEl("button", {
+      text: "\u62C9\u53D6\u5E76\u820D\u5F03\u672C\u5730\u4FEE\u6539",
+      cls: "mod-warning",
+      type: "button"
+    });
+    overwriteButton.addEventListener("click", () => {
+      modal.close();
+      resolve(true);
+    });
+    modal.open();
+  });
 }
 function confirmForcePush(app) {
   return new Promise((resolve) => {
@@ -4613,19 +4787,14 @@ var VitePressButterflyPublisher = class extends import_obsidian5.Plugin {
     });
     this.addSettingTab(
       new PublisherSettingsTab(this.app, this, () => this.settings, (changes) => this.updateSettings(changes), {
-        onValidate: () => this.runWithFeedback("\u9A8C\u8BC1\u914D\u7F6E", () => this.blog.validate().then((result) => {
-          const state = result.setupSecretsPresent ? "Setup \u5DF2\u5B8C\u6210" : "Setup \u672A\u5B8C\u6210";
-          if (result.repository) {
-            new import_obsidian5.Notice(`\u9A8C\u8BC1\u901A\u8FC7\uFF1A@${result.login}\uFF0C\u4ED3\u5E93 ${result.repository.owner}/${result.repository.name}\uFF08${state}\uFF09`);
-          } else {
-            new import_obsidian5.Notice(`\u9A8C\u8BC1\u901A\u8FC7\uFF1A@${result.login}\u3002\u672A\u8BC6\u522B\u5230\u6587\u7AE0\u4ED3\u5E93\uFF0C\u89E6\u53D1 Setup \u65F6\u4F1A\u81EA\u52A8\u521B\u5EFA\u3002`);
-          }
-        })),
+        onCheckPat: () => this.blog.checkPat(),
+        onCheckContentRepo: () => this.blog.checkContentRepo(),
+        onCheckBlogRepo: () => this.blog.checkBlogRepo(),
+        onCheckReady: () => this.blog.checkReady(),
         onSetup: () => this.blog.setup(),
         onTrigger: () => this.blog.triggerDeploy(),
         onPull: () => this.blog.pull(),
-        onPush: () => this.blog.push(),
-        onForcePush: () => this.blog.forcePush()
+        onPush: () => this.blog.push()
       })
     );
     this.addCommand({

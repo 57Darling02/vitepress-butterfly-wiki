@@ -1,43 +1,68 @@
-import { Vault } from "obsidian";
+import { TFile, Vault } from "obsidian";
 import { unzip, Unzipped } from "fflate";
 
-import { GitHubClient, GitHubRepositoryRef } from "./github";
 import { isExcludedPath } from "../utils/paths";
 
-export interface PullLatestOptions {
-  /** The Vault whose files will be replaced by the repository content. */
-  vault: Vault;
-  /** Authenticated client for GitHub's API. */
-  client: GitHubClient;
-  /** The content repository. Pulling always targets its `main` branch. */
-  repository: GitHubRepositoryRef;
+export interface PullPlan {
+  /** Files to write or update: remote exists and local matches or is absent. */
+  toWrite: string[];
+  /**
+   * Files where the remote version differs from a modified local file.
+   * Applying the pull discards those local changes — needs confirmation.
+   */
+  overwritten: string[];
+  /** Local files that do not exist remotely; kept untouched. */
+  keptLocal: string[];
 }
 
-export interface PullLatestResult {
-  /** Whether any file changed locally. */
-  changed: boolean;
-  /** Vault-relative paths written or updated. */
+export interface PullResult {
+  /** Files written or updated. */
   updated: string[];
-  /** Vault-relative paths moved to the vault trash. */
-  deleted: string[];
+  /** Files whose local modifications were replaced by the remote version. */
+  overwritten: string[];
 }
 
 /**
- * Replaces the Vault with the repository's `main` branch content, without
- * requiring a local Git installation. Works from any device: the private
- * repository zipball is fetched through the authenticated API and extracted
- * with fflate.
- *
- * Device-local files (`.obsidian` state, plugin settings) are kept, mirroring
- * the publish-side exclusion list. Everything else not present on the remote
- * is moved to the vault trash so the pull stays recoverable.
+ * Compares the remote archive (unzipped) against the Vault without touching
+ * anything. Local-only files are always kept, so a pull can never lose
+ * unpublished drafts; the only destructive case is a modified local file
+ * that the remote also has, which is reported as `overwritten`.
  */
-export async function pullLatest(options: PullLatestOptions): Promise<PullLatestResult> {
-  const zip = await options.client.downloadZipball(options.repository);
-  const files = await unzipAsync(zip);
-  const updated: string[] = [];
-  const deleted: string[] = [];
+export function planPull(vault: Vault, files: Unzipped): PullPlan {
   const remotePaths = new Set<string>();
+  const toWrite: string[] = [];
+
+  for (const [zipPath] of Object.entries(files)) {
+    const path = stripRootDirectory(zipPath);
+    if (!path || isExcludedPath(path)) {
+      continue;
+    }
+    remotePaths.add(path);
+
+    if (!vault.getFileByPath(path)) {
+      toWrite.push(path);
+    }
+  }
+
+  const keptLocal = vault
+    .getFiles()
+    .map((file) => file.path)
+    .filter((path) => !remotePaths.has(path) && !isExcludedPath(path))
+    .sort();
+
+  return { toWrite, overwritten: [], keptLocal };
+}
+
+/**
+ * Classifies files whose local content differs from the remote version.
+ * Requires reading local files, so it runs separately from the cheap
+ * existence-based `planPull`.
+ */
+export async function findOverwritten(
+  vault: Vault,
+  files: Unzipped,
+): Promise<string[]> {
+  const overwritten: string[] = [];
 
   for (const [zipPath, content] of Object.entries(files)) {
     const path = stripRootDirectory(zipPath);
@@ -45,32 +70,60 @@ export async function pullLatest(options: PullLatestOptions): Promise<PullLatest
       continue;
     }
 
-    remotePaths.add(path);
-    const data = toArrayBuffer(content);
-    const existing = options.vault.getFileByPath(path);
-    if (existing) {
-      await options.vault.modifyBinary(existing, data);
-    } else {
-      await ensureParentFolder(options.vault, path);
-      await options.vault.createBinary(path, data);
+    const existing = vault.getFileByPath(path);
+    if (existing && !(await fileMatches(existing, content))) {
+      overwritten.push(path);
     }
-    updated.push(path);
   }
 
-  for (const file of options.vault.getFiles()) {
-    if (remotePaths.has(file.path) || isExcludedPath(file.path)) {
+  return overwritten.sort();
+}
+
+/** Applies a plan produced by `planPull` to the Vault. */
+export async function applyPull(
+  vault: Vault,
+  files: Unzipped,
+  plan: PullPlan,
+): Promise<PullResult> {
+  const updated: string[] = [];
+
+  for (const [zipPath, content] of Object.entries(files)) {
+    const path = stripRootDirectory(zipPath);
+    if (!path || isExcludedPath(path)) {
       continue;
     }
 
-    // Keep un-published local work recoverable instead of deleting it.
-    await options.vault.trash(file, false);
-    deleted.push(file.path);
+    const existing = vault.getFileByPath(path);
+    if (!existing) {
+      await ensureParentFolder(vault, path);
+      await vault.createBinary(path, toArrayBuffer(content));
+      updated.push(path);
+    } else if (
+      plan.overwritten.includes(path)
+      || !(await fileMatches(existing, content))
+    ) {
+      await vault.modifyBinary(existing, toArrayBuffer(content));
+      updated.push(path);
+    }
   }
 
-  return { changed: updated.length > 0 || deleted.length > 0, updated, deleted };
+  return { updated, overwritten: plan.overwritten };
 }
 
-function unzipAsync(data: ArrayBuffer): Promise<Unzipped> {
+async function fileMatches(file: TFile, content: Uint8Array): Promise<boolean> {
+  const local = new Uint8Array(await file.vault.readBinary(file));
+  if (local.byteLength !== content.byteLength) {
+    return false;
+  }
+  for (let index = 0; index < local.byteLength; index += 1) {
+    if (local[index] !== content[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function unzipAsync(data: ArrayBuffer): Promise<Unzipped> {
   return new Promise((resolve, reject) => {
     unzip(new Uint8Array(data), (error, files) => {
       if (error) {
@@ -80,11 +133,6 @@ function unzipAsync(data: ArrayBuffer): Promise<Unzipped> {
       }
     });
   });
-}
-
-/** Copies a typed-array slice into a standalone ArrayBuffer. */
-function toArrayBuffer(data: Uint8Array): ArrayBuffer {
-  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
 }
 
 /**
@@ -115,4 +163,9 @@ async function ensureParentFolder(vault: Vault, path: string): Promise<void> {
       await vault.createFolder(folder);
     }
   }
+}
+
+/** Copies a typed-array slice into a standalone ArrayBuffer. */
+function toArrayBuffer(data: Uint8Array): ArrayBuffer {
+  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
 }

@@ -26,19 +26,14 @@ export default class VitePressButterflyPublisher extends Plugin {
 
 		this.addSettingTab(
 			new PublisherSettingsTab(this.app, this, () => this.settings, (changes) => this.updateSettings(changes), {
-				onValidate: () => this.runWithFeedback("验证配置", () => this.blog.validate().then((result) => {
-					const state = result.setupSecretsPresent ? "Setup 已完成" : "Setup 未完成";
-					if (result.repository) {
-						new Notice(`验证通过：@${result.login}，仓库 ${result.repository.owner}/${result.repository.name}（${state}）`);
-					} else {
-						new Notice(`验证通过：@${result.login}。未识别到文章仓库，触发 Setup 时会自动创建。`);
-					}
-				})),
+				onCheckPat: () => this.blog.checkPat(),
+				onCheckContentRepo: () => this.blog.checkContentRepo(),
+				onCheckBlogRepo: () => this.blog.checkBlogRepo(),
+				onCheckReady: () => this.blog.checkReady(),
 				onSetup: () => this.blog.setup(),
 				onTrigger: () => this.blog.triggerDeploy(),
 				onPull: () => this.blog.pull(),
 				onPush: () => this.blog.push(),
-				onForcePush: () => this.blog.forcePush(),
 			}),
 		);
 

@@ -1,4 +1,22 @@
-.vitepress-butterfly-publisher-status {
+.vitepress-butterfly-check-status {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--font-ui-smaller);
+}
+
+.vitepress-butterfly-check-status.vpb-ok {
+  color: var(--color-green);
+}
+
+.vitepress-butterfly-check-status.vpb-warn {
+  color: var(--color-orange);
+}
+
+.vitepress-butterfly-check-status.vpb-error {
+  color: var(--color-red);
+}
+
+.vitepress-butterfly-publisher-hint {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
 }
