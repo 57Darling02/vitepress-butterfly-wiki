@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
 
           gh api --method PUT "repos/$BLOG_REPO/actions/permissions" \
-            -f enabled=true -f allowed_actions=all
+            -F enabled=true -F allowed_actions=all
 
       - name: Configure repository secrets
         env:
