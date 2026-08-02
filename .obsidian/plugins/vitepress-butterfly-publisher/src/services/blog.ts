@@ -1,6 +1,7 @@
 import { Notice, App } from "obsidian";
 
 import { GitHubClient, GitHubRepositoryRef } from "./github";
+import { cloneRepository } from "./gitclone";
 import type { PluginSettings } from "../settings";
 
 const DEFAULT_THEME_REPO = "57Darling02/VitePress_butterfly";
@@ -145,6 +146,9 @@ export class BlogService {
       }
 
       new Notice(`Setup 完成！博客仓库：${resolvedBlogRepoName}，首次部署已触发。`);
+      await this.cloneToVault().catch((error: unknown) => {
+        new Notice(`Setup 完成，但自动克隆失败：${error instanceof Error ? error.message : String(error)}。可在操作区点击「克隆到本地」重试。`);
+      });
     } finally {
       for (const name of SETUP_SECRETS) {
         await client.deleteActionsSecret(repository, name).catch(() => undefined);
@@ -158,6 +162,29 @@ export class BlogService {
     const repository = await this.requireRepository(client);
     await client.dispatchWorkflow(repository, TRIGGER_WORKFLOW);
     new Notice("已触发博客重建。");
+  }
+
+  /**
+   * Clones the content repository into the Vault root (creates `.git`), so
+   * obsidian-git can Commit / Push / Pull without manual setup.
+   */
+  async cloneToVault(): Promise<void> {
+    const { pat } = this.requireSettings("克隆");
+    const client = new GitHubClient(pat);
+    const repository = await this.requireRepository(client);
+
+    if (await this.deps.app.vault.adapter.exists(".git")) {
+      new Notice("当前 Vault 已有 .git 目录，无需克隆。");
+      return;
+    }
+
+    new Notice(`正在克隆 ${repository.owner}/${repository.name} 到本地...`);
+    await cloneRepository({
+      vault: this.deps.app.vault,
+      url: `https://${pat}@github.com/${repository.owner}/${repository.name}.git`,
+      token: pat,
+    });
+    new Notice("克隆完成！现在可以用 obsidian-git 进行 Commit / Push / Pull。");
   }
 
   private client(): GitHubClient {

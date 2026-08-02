@@ -32,6 +32,7 @@ export default class VitePressButterflyPublisher extends Plugin {
 				onCheckReady: () => this.blog.checkReady(),
 				onSetup: () => this.blog.setup(),
 				onTrigger: () => this.blog.triggerDeploy(),
+				onClone: () => this.blog.cloneToVault(),
 			}),
 		);
 
@@ -39,6 +40,11 @@ export default class VitePressButterflyPublisher extends Plugin {
 			id: "setup-blog",
 			name: "触发 Setup（创建博客仓库）",
 			callback: () => this.runWithFeedback("触发 Setup", () => this.blog.setup()),
+		});
+		this.addCommand({
+			id: "clone-repo",
+			name: "克隆文章仓库到本地",
+			callback: () => this.runWithFeedback("克隆", () => this.blog.cloneToVault()),
 		});
 		this.addCommand({
 			id: "trigger-deploy",

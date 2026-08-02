@@ -48,6 +48,7 @@ export interface PublisherSettingsActions {
 	onCheckReady(): Promise<ReadyCheckResult>;
 	onSetup(): Promise<unknown>;
 	onTrigger(): Promise<unknown>;
+	onClone(): Promise<unknown>;
 }
 
 type SaveSettings = (changes: Partial<PluginSettings>) => Promise<void>;
@@ -189,7 +190,8 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		// --- Actions ---
 		containerEl.createEl("h3", { text: "操作" });
-		this.addAction(containerEl, "触发 Setup", "创建博客仓库并配置全部 secrets 与首次部署。", "Setup 运行中...", this.actions.onSetup);
+		this.addAction(containerEl, "触发 Setup", "创建博客仓库并配置全部 secrets 与首次部署，完成后自动克隆到本地。", "Setup 运行中...", this.actions.onSetup);
+		this.addAction(containerEl, "克隆到本地", "生成 .git 工作副本，之后可用 obsidian-git 进行 Commit / Push / Pull。", "克隆中...", this.actions.onClone);
 		this.addAction(containerEl, "触发部署", "通知博客仓库重新构建部署（发布请用 obsidian-git 的 Push）。", "触发中...", this.actions.onTrigger);
 	}
 

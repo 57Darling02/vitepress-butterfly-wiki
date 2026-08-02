@@ -36,33 +36,22 @@ Setup 会自动完成：fork 主题仓库 → 配置两个仓库的 secrets → 
 
 ### 5. 开始写作
 
-Setup 完成后，用 obsidian-git 把文章仓库克隆到本地（见下方说明），之后：
+Setup 完成后插件**自动把文章仓库克隆到本地**（生成 `.git`，URL 已嵌入 PAT），之后：
 
 1. 在 Obsidian 中写 Markdown（命令面板可运行 **新建博客文章** 生成带 frontmatter 的文章）
 2. obsidian-git 面板：**Commit** → **Push**——推送会自动触发博客重新构建部署
 3. 多设备切换时先 **Pull** 同步云端内容
 
+> 如果自动克隆失败，可在插件操作区点击「克隆到本地」重试；或手动用 obsidian-git 的 Clone 命令（URL 填 `https://<PAT>@github.com/你的用户名/文章仓库.git`）。
+
 ## 双插件分工
 
 | 插件 | 职责 |
 |---|---|
-| **VitePress Butterfly Publisher**（内置） | 初始化与部署：创建文章仓库、配置 secrets、触发 Setup、触发重建 |
-| **obsidian-git**（内置） | 日常内容同步：Clone / Commit / Push / Pull，桌面端与移动端均可 |
+| **VitePress Butterfly Publisher**（内置） | 初始化与部署：创建文章仓库、配置 secrets、触发 Setup、克隆到本地、触发重建 |
+| **obsidian-git**（内置） | 日常内容同步：Commit / Push / Pull，桌面端与移动端均可 |
 
-### obsidian-git 移动端配置（安卓 / iOS）
-
-obsidian-git 在移动端内置纯 JS 的 Git 实现（isomorphic-git），无需安装任何软件，同样支持 PAT 认证、可处理大仓库。首次使用：
-
-1. 打开 obsidian-git 设置，确认仓库路径（Base path）留空
-2. 执行命令 **Clone an existing repository**，URL 填（把 token 嵌入地址，作为用户名）：
-
-```text
-https://<你的PAT>@github.com/你的用户名/文章仓库名.git
-```
-
-3. 克隆完成后即可正常 **Commit / Push / Pull**
-
-> PAT 会保存在本地 `.git/config` 中，不会上传；桌面端用系统 Git，直接 git clone 或 obsidian-git 均可。
+> obsidian-git 在移动端内置纯 JS 的 Git 实现（isomorphic-git），无需安装任何软件，支持 PAT 认证、可处理大仓库。Setup 自动克隆时已把 PAT 嵌入仓库地址（保存在本地 `.git/config`，不会上传），移动端可直接 Commit / Push / Pull，无需额外配置。
 
 ## 内置插件说明
 
@@ -79,7 +68,8 @@ https://<你的PAT>@github.com/你的用户名/文章仓库名.git
 
 | 操作 | 作用 |
 |---|---|
-| 触发 Setup | 创建博客仓库、配置全部 secrets 并触发首次部署（只需一次） |
+| 触发 Setup | 创建博客仓库、配置全部 secrets 并触发首次部署，完成后自动克隆到本地（只需一次） |
+| 克隆到本地 | 生成 `.git` 工作副本（Setup 失败时可手动重试） |
 | 触发部署 | 不发布内容，仅通知博客仓库重新构建 |
 
 > 发布与拉取交给 obsidian-git：Push 后文章仓库的 trigger 工作流会自动通知博客仓库重建。
