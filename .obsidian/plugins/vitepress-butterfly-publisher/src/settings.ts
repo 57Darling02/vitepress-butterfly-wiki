@@ -80,15 +80,15 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("文章仓库名")
-			.setDesc("当前 Vault 对应的仓库名，例如 my-blog-wiki。仓库所有者会自动识别。")
+			.setDesc("一般无需填写：插件会自动识别（Git 克隆目录或 Vault 名称匹配）。识别失败时才需要手动指定。")
 			.addText((text) => {
-				text.setPlaceholder("my-blog-wiki");
+				text.setPlaceholder("自动识别");
 				this.bindText(text, "repoName", settings.repoName, (value) => value.trim());
 			});
 
 		new Setting(containerEl)
 			.setName("博客仓库名")
-			.setDesc("Setup 工作流创建的公开博客仓库名，例如 yourname.github.io。")
+			.setDesc("Setup 工作流创建的公开博客仓库名；留空则使用 你的用户名.github.io。")
 			.addText((text) => {
 				text.setPlaceholder("yourname.github.io");
 				this.bindText(text, "blogRepoName", settings.blogRepoName, (value) => value.trim());

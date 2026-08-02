@@ -33,10 +33,7 @@
 ### 4. 填写 PAT 并触发 Setup
 
 1. 准备一个 GitHub PAT：`GitHub 头像 → Settings → Developer settings → Personal access tokens → Tokens (classic)`，勾选权限 `repo` + `workflow`（只显示一次，建议专用 token）
-2. 在插件设置中填入：
-   - **GitHub PAT**：刚才生成的 token
-   - **文章仓库名**：当前仓库名，例如 `my-blog`
-   - **博客仓库名**：公开博客仓库名，建议 `你的用户名.github.io`
+2. 在插件设置中填入 **GitHub PAT**——这是唯一必填项。文章仓库会自动识别（Git 克隆目录读取 `.git`，压缩包则按 Vault 名称匹配）；博客仓库名留空时默认 `你的用户名.github.io`
 3. 点击 **触发 Setup**，等待插件提示 Setup 完成（约 1~2 分钟）
 
 Setup 会自动完成：fork 主题仓库 → 配置两个仓库的 secrets → 开启 GitHub Pages → 触发第一次构建部署。你的 PAT 只写入 GitHub 加密的 secrets，**不会出现在任何工作流日志中**；Setup 完成后插件会自动清理它写入的临时 secrets。

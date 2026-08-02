@@ -9,6 +9,7 @@
     "dev": "node esbuild.config.mjs"
   },
   "dependencies": {
+    "@noble/hashes": "^2.2.0",
     "fflate": "^0.8.2",
     "tweetnacl": "^1.0.3"
   },

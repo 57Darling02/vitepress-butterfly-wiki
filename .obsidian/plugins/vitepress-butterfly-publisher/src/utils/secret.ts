@@ -1,16 +1,19 @@
 import nacl from "tweetnacl";
+import { blake2b } from "@noble/hashes/blake2.js";
 
 import { bytesToBase64 } from "./git";
 
-const SEAL_NONCE = new Uint8Array(24); // crypto_box_seal uses an all-zero nonce.
-
 /**
  * Encrypts a value for the GitHub Actions secrets API using libsodium's
- * sealed box scheme (X25519-XSalsa20-Poly1305), implemented with tweetnacl:
- * an ephemeral keypair encrypts to the repository's public key and the
- * ephemeral public key is prepended to the ciphertext. This is the exact
- * layout GitHub's API accepts and is interoperable with libsodium's
- * crypto_box_seal.
+ * sealed box scheme, implemented with tweetnacl + @noble/hashes:
+ *
+ *   1. generate an ephemeral X25519 keypair
+ *   2. nonce = BLAKE2b-256(ephemeral_pk || recipient_pk) truncated to 24 bytes
+ *   3. ciphertext = crypto_box(message, nonce, recipient_pk, ephemeral_sk)
+ *   4. output = ephemeral_pk (32 bytes) || ciphertext
+ *
+ * This mirrors libsodium's crypto_box_seal exactly (the nonce is derived,
+ * NOT all-zero), so GitHub's server can decrypt it.
  */
 export async function encryptGitHubSecret(
   value: string,
@@ -22,8 +25,14 @@ export async function encryptGitHubSecret(
 
   const recipient = base64ToBytes(publicKey);
   const ephemeral = nacl.box.keyPair();
+
+  const material = new Uint8Array(64);
+  material.set(ephemeral.publicKey);
+  material.set(recipient, 32);
+  const nonce = blake2b(material, { dkLen: 24 });
+
   const message = new TextEncoder().encode(value);
-  const ciphertext = nacl.box(message, SEAL_NONCE, recipient, ephemeral.secretKey);
+  const ciphertext = nacl.box(message, nonce, recipient, ephemeral.secretKey);
 
   const sealed = new Uint8Array(ephemeral.publicKey.length + ciphertext.length);
   sealed.set(ephemeral.publicKey);

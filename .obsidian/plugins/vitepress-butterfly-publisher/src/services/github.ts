@@ -183,6 +183,7 @@ interface GitHubRepositoryResponse {
   private: boolean;
   default_branch: string;
   html_url: string;
+  owner: { login: string };
 }
 
 interface RequestOptions {
@@ -215,6 +216,18 @@ export class GitHubClient {
   async getRepository(repository: RepoRef): Promise<GitHubRepository> {
     const result = await this.request<GitHubRepositoryResponse>(this.repositoryPath(repository));
     return this.toRepository(result);
+  }
+
+  /** Lists the authenticated user's repositories, most recently updated first. */
+  async listUserRepos(): Promise<readonly GitHubRepositoryRef[]> {
+    const result = await this.request<GitHubRepositoryResponse[]>("/user/repos", {
+      query: { per_page: 100, sort: "updated" },
+    });
+
+    return result.map((repo) => ({
+      owner: repo.owner.login,
+      name: repo.name,
+    }));
   }
 
   async getRef(repository: RepoRef, ref = "main"): Promise<GitRef> {

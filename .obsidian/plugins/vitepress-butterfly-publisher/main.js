@@ -6,6 +6,7 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
@@ -30,6 +31,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
 // (disabled):crypto
 var require_crypto = __commonJS({
@@ -1818,7 +1820,7 @@ var require_nacl_fast = __commonJS({
         for (i = 0; i < 8; i++) ts64(out, 8 * i, hh[i], hl[i]);
         return 0;
       }
-      function add(p, q) {
+      function add2(p, q) {
         var a = gf(), b = gf(), c = gf(), d = gf(), e = gf(), f = gf(), g = gf(), h = gf(), t = gf();
         Z(a, p[1], p[0]);
         Z(t, q[1], q[0]);
@@ -1862,8 +1864,8 @@ var require_nacl_fast = __commonJS({
         for (i = 255; i >= 0; --i) {
           b = s[i / 8 | 0] >> (i & 7) & 1;
           cswap(p, q, b);
-          add(q, p);
-          add(p, p);
+          add2(q, p);
+          add2(p, p);
           cswap(p, q, b);
         }
       }
@@ -1988,7 +1990,7 @@ var require_nacl_fast = __commonJS({
         reduce(h);
         scalarmult(p, q, h);
         scalarbase(q, sm.subarray(32));
-        add(p, q);
+        add2(p, q);
         pack(t, p);
         n -= 64;
         if (crypto_verify_32(sm, 0, t, 0)) {
@@ -2049,7 +2051,7 @@ var require_nacl_fast = __commonJS({
         S,
         Z,
         pow2523,
-        add,
+        add: add2,
         set25519,
         modL,
         scalarmult,
@@ -2303,11 +2305,11 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       text.inputEl.spellcheck = false;
       this.bindText(text, "pat", settings.pat, (value) => value.trim());
     });
-    new import_obsidian.Setting(containerEl).setName("\u6587\u7AE0\u4ED3\u5E93\u540D").setDesc("\u5F53\u524D Vault \u5BF9\u5E94\u7684\u4ED3\u5E93\u540D\uFF0C\u4F8B\u5982 my-blog-wiki\u3002\u4ED3\u5E93\u6240\u6709\u8005\u4F1A\u81EA\u52A8\u8BC6\u522B\u3002").addText((text) => {
-      text.setPlaceholder("my-blog-wiki");
+    new import_obsidian.Setting(containerEl).setName("\u6587\u7AE0\u4ED3\u5E93\u540D").setDesc("\u4E00\u822C\u65E0\u9700\u586B\u5199\uFF1A\u63D2\u4EF6\u4F1A\u81EA\u52A8\u8BC6\u522B\uFF08Git \u514B\u9686\u76EE\u5F55\u6216 Vault \u540D\u79F0\u5339\u914D\uFF09\u3002\u8BC6\u522B\u5931\u8D25\u65F6\u624D\u9700\u8981\u624B\u52A8\u6307\u5B9A\u3002").addText((text) => {
+      text.setPlaceholder("\u81EA\u52A8\u8BC6\u522B");
       this.bindText(text, "repoName", settings.repoName, (value) => value.trim());
     });
-    new import_obsidian.Setting(containerEl).setName("\u535A\u5BA2\u4ED3\u5E93\u540D").setDesc("Setup \u5DE5\u4F5C\u6D41\u521B\u5EFA\u7684\u516C\u5F00\u535A\u5BA2\u4ED3\u5E93\u540D\uFF0C\u4F8B\u5982 yourname.github.io\u3002").addText((text) => {
+    new import_obsidian.Setting(containerEl).setName("\u535A\u5BA2\u4ED3\u5E93\u540D").setDesc("Setup \u5DE5\u4F5C\u6D41\u521B\u5EFA\u7684\u516C\u5F00\u535A\u5BA2\u4ED3\u5E93\u540D\uFF1B\u7559\u7A7A\u5219\u4F7F\u7528 \u4F60\u7684\u7528\u6237\u540D.github.io\u3002").addText((text) => {
       text.setPlaceholder("yourname.github.io");
       this.bindText(text, "blogRepoName", settings.blogRepoName, (value) => value.trim());
     });
@@ -2376,6 +2378,660 @@ var import_obsidian2 = require("obsidian");
 // src/utils/secret.ts
 var import_tweetnacl = __toESM(require_nacl_fast());
 
+// node_modules/.pnpm/@noble+hashes@2.2.0/node_modules/@noble/hashes/utils.js
+function isBytes(a) {
+  return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
+}
+function anumber(n, title = "") {
+  if (typeof n !== "number") {
+    const prefix = title && `"${title}" `;
+    throw new TypeError(`${prefix}expected number, got ${typeof n}`);
+  }
+  if (!Number.isSafeInteger(n) || n < 0) {
+    const prefix = title && `"${title}" `;
+    throw new RangeError(`${prefix}expected integer >= 0, got ${n}`);
+  }
+}
+function abytes(value, length, title = "") {
+  const bytes = isBytes(value);
+  const len = value?.length;
+  const needsLen = length !== void 0;
+  if (!bytes || needsLen && len !== length) {
+    const prefix = title && `"${title}" `;
+    const ofLen = needsLen ? ` of length ${length}` : "";
+    const got = bytes ? `length=${len}` : `type=${typeof value}`;
+    const message = prefix + "expected Uint8Array" + ofLen + ", got " + got;
+    if (!bytes)
+      throw new TypeError(message);
+    throw new RangeError(message);
+  }
+  return value;
+}
+function aexists(instance, checkFinished = true) {
+  if (instance.destroyed)
+    throw new Error("Hash instance has been destroyed");
+  if (checkFinished && instance.finished)
+    throw new Error("Hash#digest() has already been called");
+}
+function aoutput(out, instance) {
+  abytes(out, void 0, "digestInto() output");
+  const min = instance.outputLen;
+  if (out.length < min) {
+    throw new RangeError('"digestInto() output" expected to be of length >=' + min);
+  }
+}
+function u32(arr) {
+  return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
+}
+function clean(...arrays) {
+  for (let i = 0; i < arrays.length; i++) {
+    arrays[i].fill(0);
+  }
+}
+var isLE = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
+function byteSwap(word) {
+  return word << 24 & 4278190080 | word << 8 & 16711680 | word >>> 8 & 65280 | word >>> 24 & 255;
+}
+var swap8IfBE = isLE ? (n) => n : (n) => byteSwap(n) >>> 0;
+function byteSwap32(arr) {
+  for (let i = 0; i < arr.length; i++) {
+    arr[i] = byteSwap(arr[i]);
+  }
+  return arr;
+}
+var swap32IfBE = isLE ? (u) => u : byteSwap32;
+function createHasher(hashCons, info = {}) {
+  const hashC = (msg, opts) => hashCons(opts).update(msg).digest();
+  const tmp = hashCons(void 0);
+  hashC.outputLen = tmp.outputLen;
+  hashC.blockLen = tmp.blockLen;
+  hashC.canXOF = tmp.canXOF;
+  hashC.create = (opts) => hashCons(opts);
+  Object.assign(hashC, info);
+  return Object.freeze(hashC);
+}
+
+// node_modules/.pnpm/@noble+hashes@2.2.0/node_modules/@noble/hashes/_blake.js
+var BSIGMA = /* @__PURE__ */ Uint8Array.from([
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  14,
+  10,
+  4,
+  8,
+  9,
+  15,
+  13,
+  6,
+  1,
+  12,
+  0,
+  2,
+  11,
+  7,
+  5,
+  3,
+  11,
+  8,
+  12,
+  0,
+  5,
+  2,
+  15,
+  13,
+  10,
+  14,
+  3,
+  6,
+  7,
+  1,
+  9,
+  4,
+  7,
+  9,
+  3,
+  1,
+  13,
+  12,
+  11,
+  14,
+  2,
+  6,
+  5,
+  10,
+  4,
+  0,
+  15,
+  8,
+  9,
+  0,
+  5,
+  7,
+  2,
+  4,
+  10,
+  15,
+  14,
+  1,
+  11,
+  12,
+  6,
+  8,
+  3,
+  13,
+  2,
+  12,
+  6,
+  10,
+  0,
+  11,
+  8,
+  3,
+  4,
+  13,
+  7,
+  5,
+  15,
+  14,
+  1,
+  9,
+  12,
+  5,
+  1,
+  15,
+  14,
+  13,
+  4,
+  10,
+  0,
+  7,
+  6,
+  3,
+  9,
+  2,
+  8,
+  11,
+  13,
+  11,
+  7,
+  14,
+  12,
+  1,
+  3,
+  9,
+  5,
+  0,
+  15,
+  4,
+  8,
+  6,
+  2,
+  10,
+  6,
+  15,
+  14,
+  9,
+  11,
+  3,
+  0,
+  8,
+  12,
+  2,
+  13,
+  7,
+  1,
+  4,
+  10,
+  5,
+  10,
+  2,
+  8,
+  4,
+  7,
+  6,
+  1,
+  5,
+  15,
+  11,
+  9,
+  14,
+  3,
+  12,
+  13,
+  0,
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  14,
+  10,
+  4,
+  8,
+  9,
+  15,
+  13,
+  6,
+  1,
+  12,
+  0,
+  2,
+  11,
+  7,
+  5,
+  3,
+  // Blake1, unused in others
+  11,
+  8,
+  12,
+  0,
+  5,
+  2,
+  15,
+  13,
+  10,
+  14,
+  3,
+  6,
+  7,
+  1,
+  9,
+  4,
+  7,
+  9,
+  3,
+  1,
+  13,
+  12,
+  11,
+  14,
+  2,
+  6,
+  5,
+  10,
+  4,
+  0,
+  15,
+  8,
+  9,
+  0,
+  5,
+  7,
+  2,
+  4,
+  10,
+  15,
+  14,
+  1,
+  11,
+  12,
+  6,
+  8,
+  3,
+  13,
+  2,
+  12,
+  6,
+  10,
+  0,
+  11,
+  8,
+  3,
+  4,
+  13,
+  7,
+  5,
+  15,
+  14,
+  1,
+  9
+]);
+
+// node_modules/.pnpm/@noble+hashes@2.2.0/node_modules/@noble/hashes/_u64.js
+var U32_MASK64 = /* @__PURE__ */ BigInt(2 ** 32 - 1);
+var _32n = /* @__PURE__ */ BigInt(32);
+function fromBig(n, le = false) {
+  if (le)
+    return { h: Number(n & U32_MASK64), l: Number(n >> _32n & U32_MASK64) };
+  return { h: Number(n >> _32n & U32_MASK64) | 0, l: Number(n & U32_MASK64) | 0 };
+}
+var rotrSH = (h, l, s) => h >>> s | l << 32 - s;
+var rotrSL = (h, l, s) => h << 32 - s | l >>> s;
+var rotrBH = (h, l, s) => h << 64 - s | l >>> s - 32;
+var rotrBL = (h, l, s) => h >>> s - 32 | l << 64 - s;
+var rotr32H = (_h, l) => l;
+var rotr32L = (h, _l) => h;
+function add(Ah, Al, Bh, Bl) {
+  const l = (Al >>> 0) + (Bl >>> 0);
+  return { h: Ah + Bh + (l / 2 ** 32 | 0) | 0, l: l | 0 };
+}
+var add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
+var add3H = (low, Ah, Bh, Ch) => Ah + Bh + Ch + (low / 2 ** 32 | 0) | 0;
+
+// node_modules/.pnpm/@noble+hashes@2.2.0/node_modules/@noble/hashes/blake2.js
+var B2B_IV = /* @__PURE__ */ Uint32Array.from([
+  4089235720,
+  1779033703,
+  2227873595,
+  3144134277,
+  4271175723,
+  1013904242,
+  1595750129,
+  2773480762,
+  2917565137,
+  1359893119,
+  725511199,
+  2600822924,
+  4215389547,
+  528734635,
+  327033209,
+  1541459225
+]);
+var BBUF = /* @__PURE__ */ new Uint32Array(32);
+function G1b(a, b, c, d, msg, x) {
+  const Xl = msg[x], Xh = msg[x + 1];
+  let Al = BBUF[2 * a], Ah = BBUF[2 * a + 1];
+  let Bl = BBUF[2 * b], Bh = BBUF[2 * b + 1];
+  let Cl = BBUF[2 * c], Ch = BBUF[2 * c + 1];
+  let Dl = BBUF[2 * d], Dh = BBUF[2 * d + 1];
+  let ll = add3L(Al, Bl, Xl);
+  Ah = add3H(ll, Ah, Bh, Xh);
+  Al = ll | 0;
+  ({ Dh, Dl } = { Dh: Dh ^ Ah, Dl: Dl ^ Al });
+  ({ Dh, Dl } = { Dh: rotr32H(Dh, Dl), Dl: rotr32L(Dh, Dl) });
+  ({ h: Ch, l: Cl } = add(Ch, Cl, Dh, Dl));
+  ({ Bh, Bl } = { Bh: Bh ^ Ch, Bl: Bl ^ Cl });
+  ({ Bh, Bl } = { Bh: rotrSH(Bh, Bl, 24), Bl: rotrSL(Bh, Bl, 24) });
+  BBUF[2 * a] = Al, BBUF[2 * a + 1] = Ah;
+  BBUF[2 * b] = Bl, BBUF[2 * b + 1] = Bh;
+  BBUF[2 * c] = Cl, BBUF[2 * c + 1] = Ch;
+  BBUF[2 * d] = Dl, BBUF[2 * d + 1] = Dh;
+}
+function G2b(a, b, c, d, msg, x) {
+  const Xl = msg[x], Xh = msg[x + 1];
+  let Al = BBUF[2 * a], Ah = BBUF[2 * a + 1];
+  let Bl = BBUF[2 * b], Bh = BBUF[2 * b + 1];
+  let Cl = BBUF[2 * c], Ch = BBUF[2 * c + 1];
+  let Dl = BBUF[2 * d], Dh = BBUF[2 * d + 1];
+  let ll = add3L(Al, Bl, Xl);
+  Ah = add3H(ll, Ah, Bh, Xh);
+  Al = ll | 0;
+  ({ Dh, Dl } = { Dh: Dh ^ Ah, Dl: Dl ^ Al });
+  ({ Dh, Dl } = { Dh: rotrSH(Dh, Dl, 16), Dl: rotrSL(Dh, Dl, 16) });
+  ({ h: Ch, l: Cl } = add(Ch, Cl, Dh, Dl));
+  ({ Bh, Bl } = { Bh: Bh ^ Ch, Bl: Bl ^ Cl });
+  ({ Bh, Bl } = { Bh: rotrBH(Bh, Bl, 63), Bl: rotrBL(Bh, Bl, 63) });
+  BBUF[2 * a] = Al, BBUF[2 * a + 1] = Ah;
+  BBUF[2 * b] = Bl, BBUF[2 * b + 1] = Bh;
+  BBUF[2 * c] = Cl, BBUF[2 * c + 1] = Ch;
+  BBUF[2 * d] = Dl, BBUF[2 * d + 1] = Dh;
+}
+function checkBlake2Opts(outputLen, opts = {}, keyLen, saltLen, persLen) {
+  anumber(keyLen);
+  if (outputLen <= 0 || outputLen > keyLen)
+    throw new Error("outputLen bigger than keyLen");
+  const { key, salt, personalization } = opts;
+  if (key !== void 0 && (key.length < 1 || key.length > keyLen))
+    throw new Error('"key" expected to be undefined or of length=1..' + keyLen);
+  if (salt !== void 0)
+    abytes(salt, saltLen, "salt");
+  if (personalization !== void 0)
+    abytes(personalization, persLen, "personalization");
+}
+var _BLAKE2 = class {
+  constructor(blockLen, outputLen) {
+    __publicField(this, "buffer");
+    __publicField(this, "buffer32");
+    __publicField(this, "finished", false);
+    __publicField(this, "destroyed", false);
+    __publicField(this, "length", 0);
+    __publicField(this, "pos", 0);
+    __publicField(this, "blockLen");
+    __publicField(this, "outputLen");
+    __publicField(this, "canXOF", false);
+    anumber(blockLen);
+    anumber(outputLen);
+    this.blockLen = blockLen;
+    this.outputLen = outputLen;
+    this.buffer = new Uint8Array(blockLen);
+    this.buffer32 = u32(this.buffer);
+  }
+  update(data) {
+    aexists(this);
+    abytes(data);
+    const { blockLen, buffer, buffer32 } = this;
+    const len = data.length;
+    const offset = data.byteOffset;
+    const buf = data.buffer;
+    for (let pos = 0; pos < len; ) {
+      if (this.pos === blockLen) {
+        swap32IfBE(buffer32);
+        this.compress(buffer32, 0, false);
+        swap32IfBE(buffer32);
+        this.pos = 0;
+      }
+      const take = Math.min(blockLen - this.pos, len - pos);
+      const dataOffset = offset + pos;
+      if (take === blockLen && !(dataOffset % 4) && pos + take < len) {
+        const data32 = new Uint32Array(buf, dataOffset, Math.floor((len - pos) / 4));
+        swap32IfBE(data32);
+        for (let pos32 = 0; pos + blockLen < len; pos32 += buffer32.length, pos += blockLen) {
+          this.length += blockLen;
+          this.compress(data32, pos32, false);
+        }
+        swap32IfBE(data32);
+        continue;
+      }
+      buffer.set(data.subarray(pos, pos + take), this.pos);
+      this.pos += take;
+      this.length += take;
+      pos += take;
+    }
+    return this;
+  }
+  digestInto(out) {
+    aexists(this);
+    aoutput(out, this);
+    const { pos, buffer32 } = this;
+    this.finished = true;
+    clean(this.buffer.subarray(pos));
+    swap32IfBE(buffer32);
+    this.compress(buffer32, 0, true);
+    swap32IfBE(buffer32);
+    if (out.byteOffset & 3)
+      throw new RangeError('"digestInto() output" expected 4-byte aligned byteOffset, got ' + out.byteOffset);
+    const state = this.get();
+    const out32 = u32(out);
+    const full = Math.floor(this.outputLen / 4);
+    for (let i = 0; i < full; i++)
+      out32[i] = swap8IfBE(state[i]);
+    const tail = this.outputLen % 4;
+    if (!tail)
+      return;
+    const off = full * 4;
+    const word = state[full];
+    for (let i = 0; i < tail; i++)
+      out[off + i] = word >>> 8 * i;
+  }
+  digest() {
+    const { buffer, outputLen } = this;
+    this.digestInto(buffer);
+    const res = buffer.slice(0, outputLen);
+    this.destroy();
+    return res;
+  }
+  _cloneInto(to) {
+    const { buffer, length, finished, destroyed, outputLen, pos } = this;
+    to ||= new this.constructor({ dkLen: outputLen });
+    to.set(...this.get());
+    to.buffer.set(buffer);
+    to.destroyed = destroyed;
+    to.finished = finished;
+    to.length = length;
+    to.pos = pos;
+    to.outputLen = outputLen;
+    return to;
+  }
+  clone() {
+    return this._cloneInto();
+  }
+};
+var _BLAKE2b = class extends _BLAKE2 {
+  constructor(opts = {}) {
+    const olen = opts.dkLen === void 0 ? 64 : opts.dkLen;
+    super(128, olen);
+    // Same IV words as SHA-512 / BLAKE2b, encoded as LE u32 low/high halves.
+    __publicField(this, "v0l", B2B_IV[0] | 0);
+    __publicField(this, "v0h", B2B_IV[1] | 0);
+    __publicField(this, "v1l", B2B_IV[2] | 0);
+    __publicField(this, "v1h", B2B_IV[3] | 0);
+    __publicField(this, "v2l", B2B_IV[4] | 0);
+    __publicField(this, "v2h", B2B_IV[5] | 0);
+    __publicField(this, "v3l", B2B_IV[6] | 0);
+    __publicField(this, "v3h", B2B_IV[7] | 0);
+    __publicField(this, "v4l", B2B_IV[8] | 0);
+    __publicField(this, "v4h", B2B_IV[9] | 0);
+    __publicField(this, "v5l", B2B_IV[10] | 0);
+    __publicField(this, "v5h", B2B_IV[11] | 0);
+    __publicField(this, "v6l", B2B_IV[12] | 0);
+    __publicField(this, "v6h", B2B_IV[13] | 0);
+    __publicField(this, "v7l", B2B_IV[14] | 0);
+    __publicField(this, "v7h", B2B_IV[15] | 0);
+    checkBlake2Opts(olen, opts, 64, 16, 16);
+    let { key, personalization, salt } = opts;
+    let keyLength = 0;
+    if (key !== void 0) {
+      abytes(key, void 0, "key");
+      keyLength = key.length;
+    }
+    this.v0l ^= this.outputLen | keyLength << 8 | 1 << 16 | 1 << 24;
+    if (salt !== void 0) {
+      abytes(salt, void 0, "salt");
+      const slt = u32(salt);
+      this.v4l ^= swap8IfBE(slt[0]);
+      this.v4h ^= swap8IfBE(slt[1]);
+      this.v5l ^= swap8IfBE(slt[2]);
+      this.v5h ^= swap8IfBE(slt[3]);
+    }
+    if (personalization !== void 0) {
+      abytes(personalization, void 0, "personalization");
+      const pers = u32(personalization);
+      this.v6l ^= swap8IfBE(pers[0]);
+      this.v6h ^= swap8IfBE(pers[1]);
+      this.v7l ^= swap8IfBE(pers[2]);
+      this.v7h ^= swap8IfBE(pers[3]);
+    }
+    if (key !== void 0) {
+      const tmp = new Uint8Array(this.blockLen);
+      tmp.set(key);
+      this.update(tmp);
+    }
+  }
+  // prettier-ignore
+  get() {
+    let { v0l, v0h, v1l, v1h, v2l, v2h, v3l, v3h, v4l, v4h, v5l, v5h, v6l, v6h, v7l, v7h } = this;
+    return [v0l, v0h, v1l, v1h, v2l, v2h, v3l, v3h, v4l, v4h, v5l, v5h, v6l, v6h, v7l, v7h];
+  }
+  // prettier-ignore
+  set(v0l, v0h, v1l, v1h, v2l, v2h, v3l, v3h, v4l, v4h, v5l, v5h, v6l, v6h, v7l, v7h) {
+    this.v0l = v0l | 0;
+    this.v0h = v0h | 0;
+    this.v1l = v1l | 0;
+    this.v1h = v1h | 0;
+    this.v2l = v2l | 0;
+    this.v2h = v2h | 0;
+    this.v3l = v3l | 0;
+    this.v3h = v3h | 0;
+    this.v4l = v4l | 0;
+    this.v4h = v4h | 0;
+    this.v5l = v5l | 0;
+    this.v5h = v5h | 0;
+    this.v6l = v6l | 0;
+    this.v6h = v6h | 0;
+    this.v7l = v7l | 0;
+    this.v7h = v7h | 0;
+  }
+  compress(msg, offset, isLast) {
+    this.get().forEach((v, i) => BBUF[i] = v);
+    BBUF.set(B2B_IV, 16);
+    let { h, l } = fromBig(BigInt(this.length));
+    BBUF[24] = B2B_IV[8] ^ l;
+    BBUF[25] = B2B_IV[9] ^ h;
+    if (isLast) {
+      BBUF[28] = ~BBUF[28];
+      BBUF[29] = ~BBUF[29];
+    }
+    let j = 0;
+    const s = BSIGMA;
+    for (let i = 0; i < 12; i++) {
+      G1b(0, 4, 8, 12, msg, offset + 2 * s[j++]);
+      G2b(0, 4, 8, 12, msg, offset + 2 * s[j++]);
+      G1b(1, 5, 9, 13, msg, offset + 2 * s[j++]);
+      G2b(1, 5, 9, 13, msg, offset + 2 * s[j++]);
+      G1b(2, 6, 10, 14, msg, offset + 2 * s[j++]);
+      G2b(2, 6, 10, 14, msg, offset + 2 * s[j++]);
+      G1b(3, 7, 11, 15, msg, offset + 2 * s[j++]);
+      G2b(3, 7, 11, 15, msg, offset + 2 * s[j++]);
+      G1b(0, 5, 10, 15, msg, offset + 2 * s[j++]);
+      G2b(0, 5, 10, 15, msg, offset + 2 * s[j++]);
+      G1b(1, 6, 11, 12, msg, offset + 2 * s[j++]);
+      G2b(1, 6, 11, 12, msg, offset + 2 * s[j++]);
+      G1b(2, 7, 8, 13, msg, offset + 2 * s[j++]);
+      G2b(2, 7, 8, 13, msg, offset + 2 * s[j++]);
+      G1b(3, 4, 9, 14, msg, offset + 2 * s[j++]);
+      G2b(3, 4, 9, 14, msg, offset + 2 * s[j++]);
+    }
+    this.v0l ^= BBUF[0] ^ BBUF[16];
+    this.v0h ^= BBUF[1] ^ BBUF[17];
+    this.v1l ^= BBUF[2] ^ BBUF[18];
+    this.v1h ^= BBUF[3] ^ BBUF[19];
+    this.v2l ^= BBUF[4] ^ BBUF[20];
+    this.v2h ^= BBUF[5] ^ BBUF[21];
+    this.v3l ^= BBUF[6] ^ BBUF[22];
+    this.v3h ^= BBUF[7] ^ BBUF[23];
+    this.v4l ^= BBUF[8] ^ BBUF[24];
+    this.v4h ^= BBUF[9] ^ BBUF[25];
+    this.v5l ^= BBUF[10] ^ BBUF[26];
+    this.v5h ^= BBUF[11] ^ BBUF[27];
+    this.v6l ^= BBUF[12] ^ BBUF[28];
+    this.v6h ^= BBUF[13] ^ BBUF[29];
+    this.v7l ^= BBUF[14] ^ BBUF[30];
+    this.v7h ^= BBUF[15] ^ BBUF[31];
+    clean(BBUF);
+  }
+  destroy() {
+    this.destroyed = true;
+    clean(this.buffer32);
+    this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
+};
+var blake2b = /* @__PURE__ */ createHasher((opts) => new _BLAKE2b(opts));
+
 // src/utils/git.ts
 async function gitBlobSha1(content) {
   const bytes = toUint8Array(content);
@@ -2400,15 +3056,18 @@ function toUint8Array(content) {
 }
 
 // src/utils/secret.ts
-var SEAL_NONCE = new Uint8Array(24);
 async function encryptGitHubSecret(value, publicKey) {
   if (!value) {
     throw new Error("A GitHub Actions secret cannot be empty.");
   }
   const recipient = base64ToBytes(publicKey);
   const ephemeral = import_tweetnacl.default.box.keyPair();
+  const material = new Uint8Array(64);
+  material.set(ephemeral.publicKey);
+  material.set(recipient, 32);
+  const nonce = blake2b(material, { dkLen: 24 });
   const message = new TextEncoder().encode(value);
-  const ciphertext = import_tweetnacl.default.box(message, SEAL_NONCE, recipient, ephemeral.secretKey);
+  const ciphertext = import_tweetnacl.default.box(message, nonce, recipient, ephemeral.secretKey);
   const sealed = new Uint8Array(ephemeral.publicKey.length + ciphertext.length);
   sealed.set(ephemeral.publicKey);
   sealed.set(ciphertext, ephemeral.publicKey.length);
@@ -2462,6 +3121,16 @@ var GitHubClient = class {
   async getRepository(repository) {
     const result = await this.request(this.repositoryPath(repository));
     return this.toRepository(result);
+  }
+  /** Lists the authenticated user's repositories, most recently updated first. */
+  async listUserRepos() {
+    const result = await this.request("/user/repos", {
+      query: { per_page: 100, sort: "updated" }
+    });
+    return result.map((repo) => ({
+      owner: repo.owner.login,
+      name: repo.name
+    }));
   }
   async getRef(repository, ref = "main") {
     const result = await this.request(
@@ -3189,10 +3858,10 @@ var inflt = function(dat, st, buf, dict) {
         lpos = pos, lm = null;
         break;
       } else {
-        var add = sym - 254;
+        var add2 = sym - 254;
         if (sym > 264) {
           var i = sym - 257, b = fleb[i];
-          add = bits(dat, pos, (1 << b) - 1) + fl[i];
+          add2 = bits(dat, pos, (1 << b) - 1) + fl[i];
           pos += b;
         }
         var d = dm[bits16(dat, pos) & dms], dsym = d >> 4;
@@ -3211,7 +3880,7 @@ var inflt = function(dat, st, buf, dict) {
         }
         if (resize)
           cbuf(bt + 131072);
-        var end = bt + add;
+        var end = bt + add2;
         if (bt < dt) {
           var shift = dl - dt, dend = Math.min(dt, end);
           if (shift + bt < 0)
@@ -3565,8 +4234,7 @@ var BlogService = class {
     const { pat } = this.requireSettings("\u9A8C\u8BC1");
     const client = new GitHubClient(pat);
     const user = await client.getAuthenticatedUser();
-    const repository = { owner: user.login, name: this.requireRepositoryName() };
-    await client.getRepository(repository);
+    const repository = await this.resolveRepository(client);
     const secrets = await client.listSecrets(repository);
     const setupSecretsPresent = secrets.includes("SETUP_PAT") && secrets.includes("BLOG_REPO_NAME");
     return { login: user.login, repository, setupSecretsPresent };
@@ -3578,13 +4246,11 @@ var BlogService = class {
    */
   async setup() {
     const { pat, blogRepoName, themeRepo, configurePages } = this.requireSettings("\u89E6\u53D1 Setup");
-    if (!blogRepoName.trim()) {
-      throw new Error("\u8BF7\u5148\u586B\u5199\u535A\u5BA2\u4ED3\u5E93\u540D\uFF08\u4F8B\u5982 yourname.github.io\uFF09\u3002");
-    }
     const client = new GitHubClient(pat);
-    const { repository } = await this.validate();
+    const { repository, login } = await this.validate();
+    const resolvedBlogRepoName = blogRepoName.trim() || `${login}.github.io`;
     await client.setActionsSecret(repository, "SETUP_PAT", pat);
-    await client.setActionsSecret(repository, "BLOG_REPO_NAME", blogRepoName.trim());
+    await client.setActionsSecret(repository, "BLOG_REPO_NAME", resolvedBlogRepoName);
     await client.setActionsSecret(repository, "THEME_REPO", themeRepo.trim() || DEFAULT_THEME_REPO);
     await client.setActionsSecret(repository, "CONFIGURE_PAGES", String(configurePages));
     new import_obsidian3.Notice("Setup \u5DE5\u4F5C\u6D41\u5DF2\u542F\u52A8\uFF0C\u7B49\u5F85\u535A\u5BA2\u4ED3\u5E93\u521B\u5EFA\u5B8C\u6210...");
@@ -3599,7 +4265,7 @@ var BlogService = class {
       if (run.conclusion !== "success") {
         throw new Error(`Setup \u5DE5\u4F5C\u6D41\u672A\u6210\u529F\u5B8C\u6210\uFF08${run.conclusion}\uFF09\uFF0C\u8BF7\u5230\u4ED3\u5E93 Actions \u9875\u9762\u67E5\u770B\u65E5\u5FD7\u3002`);
       }
-      new import_obsidian3.Notice(`Setup \u5B8C\u6210\uFF01\u535A\u5BA2\u4ED3\u5E93\uFF1A${blogRepoName.trim()}\uFF0C\u9996\u6B21\u90E8\u7F72\u5DF2\u89E6\u53D1\u3002`);
+      new import_obsidian3.Notice(`Setup \u5B8C\u6210\uFF01\u535A\u5BA2\u4ED3\u5E93\uFF1A${resolvedBlogRepoName}\uFF0C\u9996\u6B21\u90E8\u7F72\u5DF2\u89E6\u53D1\u3002`);
     } finally {
       for (const name of SETUP_SECRETS) {
         await client.deleteActionsSecret(repository, name).catch(() => void 0);
@@ -3673,15 +4339,11 @@ var BlogService = class {
   async notifyAndWaitDeploy() {
     const { pat, blogRepoName } = this.requireSettings("\u53D1\u5E03");
     const client = new GitHubClient(pat);
-    const { repository } = await this.validate();
+    const { repository, login } = await this.validate();
     new import_obsidian3.Notice("\u5DF2\u53D1\u5E03\uFF0C\u6B63\u5728\u89E6\u53D1\u535A\u5BA2\u6784\u5EFA...");
     const startedAfter = /* @__PURE__ */ new Date();
     await client.dispatchWorkflow(repository, TRIGGER_WORKFLOW);
-    if (!blogRepoName.trim()) {
-      new import_obsidian3.Notice("\u53D1\u5E03\u6210\u529F\u3002\u535A\u5BA2\u4ED3\u5E93\u540D\u672A\u586B\u5199\uFF0C\u8BF7\u5230 GitHub Actions \u67E5\u770B\u6784\u5EFA\u72B6\u6001\u3002");
-      return;
-    }
-    const blogRepo = { owner: repository.owner, name: blogRepoName.trim() };
+    const blogRepo = { owner: repository.owner, name: blogRepoName.trim() || `${login}.github.io` };
     try {
       const run = await client.waitForWorkflowRun(blogRepo, DEPLOY_WORKFLOW, {
         event: "repository_dispatch",
@@ -3709,12 +4371,40 @@ var BlogService = class {
     }
     return settings;
   }
-  requireRepositoryName() {
-    const name = this.deps.getSettings().repoName.trim();
-    if (!name) {
-      throw new Error("\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u4ED3\u5E93\u540D\uFF08\u5F53\u524D\u6587\u7AE0\u4ED3\u5E93\u540D\uFF09\u3002");
+  /**
+   * Resolves the content repository without requiring manual input:
+   * 1. the manually entered repository name, if any;
+   * 2. the `origin` remote from `.git/config` (desktop clones);
+   * 3. a repository whose name matches the Vault folder (zip downloads).
+   */
+  async resolveRepository(client) {
+    const manual = this.deps.getSettings().repoName.trim();
+    if (manual) {
+      const user = await client.getAuthenticatedUser();
+      const repository = { owner: user.login, name: manual };
+      await client.getRepository(repository);
+      return repository;
     }
-    return name;
+    const config = await this.deps.app.vault.adapter.read(".git/config").catch(() => null);
+    if (config) {
+      const match = config.match(
+        /url\s*=\s*(?:https?:\/\/|git:\/\/|git@)(?:www\.)?github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\s*$/m
+      );
+      if (match) {
+        return { owner: match[1], name: match[2] };
+      }
+    }
+    const vaultName = this.deps.app.vault.getName();
+    if (vaultName) {
+      const repos = await client.listUserRepos();
+      const hit = repos.find((repo) => repo.name === vaultName);
+      if (hit) {
+        return hit;
+      }
+    }
+    throw new Error(
+      "\u65E0\u6CD5\u81EA\u52A8\u8BC6\u522B\u6587\u7AE0\u4ED3\u5E93\uFF1A\u5F53\u524D Vault \u4E0D\u662F Git \u514B\u9686\u76EE\u5F55\uFF0C\u4E14 Vault \u540D\u79F0\u672A\u5339\u914D\u5230\u4F60\u7684\u4ED3\u5E93\u3002\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u624B\u52A8\u586B\u5199\u4ED3\u5E93\u540D\u3002"
+    );
   }
 };
 function isRefRejected(error) {
