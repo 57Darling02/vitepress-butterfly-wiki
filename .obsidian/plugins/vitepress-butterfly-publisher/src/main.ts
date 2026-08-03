@@ -65,6 +65,9 @@ export default class VitePressButterflyPublisher extends Plugin {
 			blogRepoName: saved?.blogRepoName ?? "",
 			pendingArticleRepo: saved?.pendingArticleRepo ?? "",
 			pendingBlogRepo: saved?.pendingBlogRepo ?? "",
+			vercelToken: saved?.vercelToken ?? "",
+			vercelOrgId: saved?.vercelOrgId ?? "",
+			vercelProjectId: saved?.vercelProjectId ?? "",
 		};
 	}
 

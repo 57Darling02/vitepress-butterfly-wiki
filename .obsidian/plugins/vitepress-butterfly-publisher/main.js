@@ -3006,7 +3006,10 @@ var DEFAULT_SETTINGS = {
   repoName: "",
   blogRepoName: "",
   pendingArticleRepo: "",
-  pendingBlogRepo: ""
+  pendingBlogRepo: "",
+  vercelToken: "",
+  vercelOrgId: "",
+  vercelProjectId: ""
 };
 var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin, getSettings, saveSettings, actions) {
@@ -3017,6 +3020,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.verifiedPat = "";
     this.verifiedLogin = "";
     this.repositoryInputs = [];
+    this.vercelInputs = [];
     this.article = { state: "idle", check: null };
     this.blog = { state: "idle", check: null };
     this.isPatChecking = false;
@@ -3029,6 +3033,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.patButton = void 0;
     this.patInput = void 0;
     this.repositorySection = void 0;
+    this.vercelInputs = [];
     this.articleStatus = void 0;
     this.blogStatus = void 0;
     this.articleCheckButton = void 0;
@@ -3101,6 +3106,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     }
     this.renderArticleSection(this.repositorySection);
     this.renderBlogSection(this.repositorySection);
+    this.renderVercelSection(this.repositorySection);
     this.repositorySection.createEl("h3", { text: "\u65E5\u5E38\u64CD\u4F5C" });
     new import_obsidian.Setting(this.repositorySection).setName("\u91CD\u65B0\u6784\u5EFA\u535A\u5BA2").setDesc("\u901A\u5E38\u65E0\u9700\u624B\u52A8\u6267\u884C\uFF1B\u6587\u7AE0\u4ED3\u5E93 Push \u540E\u4F1A\u81EA\u52A8\u89E6\u53D1\u3002").addButton((button) => {
       this.repositoryInputs.push(button);
@@ -3207,6 +3213,53 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       this.setButtonVisible(button, false);
     });
     this.updateRepoButtons("blog");
+  }
+  /**
+   * Optional Vercel deployment: all three fields must be filled before the
+   * blog repository configuration writes VERCEL_* secrets. Leaving any field
+   * empty skips Vercel and keeps existing repository secrets untouched.
+   */
+  renderVercelSection(containerEl) {
+    containerEl.createEl("h3", { text: "\u53EF\u9009\uFF1AVercel \u90E8\u7F72" });
+    containerEl.createEl("p", {
+      cls: "vitepress-butterfly-publisher-hint",
+      text: "\u4E09\u9879\u90FD\u586B\u5199\u540E\uFF0C\u914D\u7F6E\u535A\u5BA2\u4ED3\u5E93\u65F6\u4F1A\u4E00\u5E76\u5199\u5165 VERCEL_TOKEN\u3001VERCEL_ORG_ID\u3001VERCEL_PROJECT_ID\uFF1B\u7559\u7A7A\u5219\u8DF3\u8FC7\u3002"
+    });
+    const fields = [
+      {
+        key: "vercelToken",
+        name: "Vercel Token",
+        desc: "Vercel \u8D26\u53F7 \u2192 Settings \u2192 Tokens \u751F\u6210\u3002",
+        placeholder: "vercel_token"
+      },
+      {
+        key: "vercelOrgId",
+        name: "Vercel Org ID",
+        desc: "Vercel \u56E2\u961F Settings \u9875\u9762\u4E2D\u7684 ID\u3002",
+        placeholder: "team_xxx"
+      },
+      {
+        key: "vercelProjectId",
+        name: "Vercel Project ID",
+        desc: "\u9700\u5148\u5728 Vercel \u521B\u5EFA\u9879\u76EE\u540E\uFF0C\u4ECE\u9879\u76EE Settings \u83B7\u53D6\u3002",
+        placeholder: "prj_xxx"
+      }
+    ];
+    for (const field of fields) {
+      new import_obsidian.Setting(containerEl).setName(field.name).setDesc(field.desc).addText((text) => {
+        this.vercelInputs.push(text);
+        text.inputEl.type = "password";
+        text.inputEl.autocomplete = "off";
+        text.inputEl.spellcheck = false;
+        text.setPlaceholder(field.placeholder);
+        text.setValue(this.getSettings()[field.key]);
+        text.onChange((value) => {
+          void this.saveSettings({ [field.key]: value.trim() }).catch((error) => {
+            new import_obsidian.Notice(this.errorMessage(error, "\u4FDD\u5B58 Vercel \u914D\u7F6E\u5931\u8D25"));
+          });
+        });
+      });
+    }
   }
   /** Switches the two repo buttons (check + action) to match the state. */
   updateRepoButtons(which) {
@@ -3322,7 +3375,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       this.setStatus(
         status,
         "ok",
-        mode === "overwrite" ? `\u2713 \u5DF2\u8986\u76D6\u5E76\u914D\u7F6E ${this.fullName(result)}` : mode === "secrets" ? result.warning ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0\uFF0C\u5DF2\u89E6\u53D1\u6784\u5EFA` : result.created ? `\u2713 \u5DF2\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u914D\u7F6E`
+        mode === "overwrite" ? `\u2713 \u5DF2\u8986\u76D6\u5E76\u914D\u7F6E ${this.fullName(result)}` : mode === "secrets" ? result.warning ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0${result.vercelConfigured ? "\uFF0C\u5DF2\u914D\u7F6E Vercel" : ""}\uFF0C\u5DF2\u89E6\u53D1\u6784\u5EFA` : result.created ? `\u2713 \u5DF2\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u914D\u7F6E`
       );
       if (result.warning) {
         new import_obsidian.Notice(result.warning, 8e3);
@@ -3443,6 +3496,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       button?.setDisabled(!enabled || locked);
     }
     this.repositorySection?.toggleClass("is-locked", !this.isPatVerified());
+    this.vercelInputs.forEach((input) => input.setDisabled(this.isPatChecking || this.isActionRunning));
     this.patInput?.setDisabled(this.isPatChecking || this.isActionRunning);
     this.patButton?.setDisabled(this.isPatChecking || this.isActionRunning);
   }
@@ -3885,12 +3939,20 @@ var BlogService = class {
     const user = await client.getAuthenticatedUser();
     const articleName = validateRepoName(settings.repoName, "\u6587\u7AE0\u4ED3\u5E93");
     const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "\u535A\u5BA2\u4ED3\u5E93") };
-    await this.writeBlogSecrets(client, blog, user.login, articleName, settings.pat);
+    const vercel = this.readVercelSecrets(settings);
+    const vercelConfigured = await this.writeBlogSecrets(
+      client,
+      blog,
+      user.login,
+      articleName,
+      settings.pat,
+      vercel
+    );
     const warning = await this.dispatchBlogBuild(client, blog);
     if (settings.pendingBlogRepo) {
       await this.deps.saveSettings({ pendingBlogRepo: "" });
     }
-    return { repository: blog, created: false, initialized: false, warning };
+    return { repository: blog, created: false, initialized: false, warning, vercelConfigured };
   }
   /**
    * Missing blog repository: create it once from the official GitHub
@@ -3927,7 +3989,15 @@ var BlogService = class {
       }
       exists = true;
     }
-    await this.writeBlogSecrets(client, blog, user.login, articleName, settings.pat);
+    const vercel = this.readVercelSecrets(settings);
+    const vercelConfigured = await this.writeBlogSecrets(
+      client,
+      blog,
+      user.login,
+      articleName,
+      settings.pat,
+      vercel
+    );
     let warning;
     if (created || pending) {
       try {
@@ -3943,7 +4013,8 @@ var BlogService = class {
       repository: blog,
       created,
       initialized: created || pending,
-      warning
+      warning,
+      vercelConfigured
     };
   }
   async dispatchBlogBuild(client, blog) {
@@ -3954,18 +4025,32 @@ var BlogService = class {
     }
     return void 0;
   }
-  async writeBlogSecrets(client, blog, owner, articleName, pat) {
+  async writeBlogSecrets(client, blog, owner, articleName, pat, vercel) {
+    const secrets = {
+      WIKI_URL: `https://github.com/${owner}/${articleName}.git`,
+      PAT: pat
+    };
+    if (vercel.token && vercel.orgId && vercel.projectId) {
+      secrets.VERCEL_TOKEN = vercel.token;
+      secrets.VERCEL_ORG_ID = vercel.orgId;
+      secrets.VERCEL_PROJECT_ID = vercel.projectId;
+    }
     try {
-      await client.setActionsSecrets(blog, {
-        WIKI_URL: `https://github.com/${owner}/${articleName}.git`,
-        PAT: pat
-      });
+      await client.setActionsSecrets(blog, secrets);
     } catch (error) {
       if (error instanceof GitHubApiError && error.status === 404) {
         throw new Error("\u535A\u5BA2\u4ED3\u5E93\u4E0D\u5B58\u5728\u6216\u65E0\u6743\u8BBF\u95EE\uFF0C\u8BF7\u91CD\u65B0\u68C0\u6D4B\u540E\u518D\u8BD5\u3002");
       }
       throw error;
     }
+    return Boolean(vercel.token && vercel.orgId && vercel.projectId);
+  }
+  readVercelSecrets(settings) {
+    return {
+      token: settings.vercelToken.trim(),
+      orgId: settings.vercelOrgId.trim(),
+      projectId: settings.vercelProjectId.trim()
+    };
   }
   // ------------------------------------------------------------------
   // Shared helpers.
@@ -4304,7 +4389,10 @@ var VitePressButterflyPublisher = class extends import_obsidian4.Plugin {
       repoName: saved?.repoName ?? "",
       blogRepoName: saved?.blogRepoName ?? "",
       pendingArticleRepo: saved?.pendingArticleRepo ?? "",
-      pendingBlogRepo: saved?.pendingBlogRepo ?? ""
+      pendingBlogRepo: saved?.pendingBlogRepo ?? "",
+      vercelToken: saved?.vercelToken ?? "",
+      vercelOrgId: saved?.vercelOrgId ?? "",
+      vercelProjectId: saved?.vercelProjectId ?? ""
     };
   }
   async updateSettings(changes) {

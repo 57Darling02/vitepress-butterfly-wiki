@@ -34,6 +34,8 @@ export interface RepositoryConfigurationResult {
   created: boolean;
   initialized: boolean;
   warning?: string;
+  /** True when the optional VERCEL_* secrets were written with this action. */
+  vercelConfigured?: boolean;
 }
 
 interface ObsidianGitManager {
@@ -245,14 +247,16 @@ export class BlogService {
     const articleName = validateRepoName(settings.repoName, "文章仓库");
     const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "博客仓库") };
 
-    await this.writeBlogSecrets(client, blog, user.login, articleName, settings.pat);
-
+    const vercel = this.readVercelSecrets(settings);
+    const vercelConfigured = await this.writeBlogSecrets(
+      client, blog, user.login, articleName, settings.pat, vercel,
+    );
     const warning = await this.dispatchBlogBuild(client, blog);
 
     if (settings.pendingBlogRepo) {
       await this.deps.saveSettings({ pendingBlogRepo: "" });
     }
-    return { repository: blog, created: false, initialized: false, warning };
+    return { repository: blog, created: false, initialized: false, warning, vercelConfigured };
   }
 
   /**
@@ -294,7 +298,10 @@ export class BlogService {
       exists = true;
     }
 
-    await this.writeBlogSecrets(client, blog, user.login, articleName, settings.pat);
+    const vercel = this.readVercelSecrets(settings);
+    const vercelConfigured = await this.writeBlogSecrets(
+      client, blog, user.login, articleName, settings.pat, vercel,
+    );
 
     let warning: string | undefined;
     if (created || pending) {
@@ -316,6 +323,7 @@ export class BlogService {
       created,
       initialized: created || pending,
       warning,
+      vercelConfigured,
     };
   }
 
@@ -337,18 +345,38 @@ export class BlogService {
     owner: string,
     articleName: string,
     pat: string,
-  ): Promise<void> {
+    vercel: Readonly<{ token: string; orgId: string; projectId: string }>,
+  ): Promise<boolean> {
+    const secrets: Record<string, string> = {
+      WIKI_URL: `https://github.com/${owner}/${articleName}.git`,
+      PAT: pat,
+    };
+    // Optional Vercel deployment: only write VERCEL_* secrets when all three
+    // values are provided, so existing repository secrets stay untouched.
+    if (vercel.token && vercel.orgId && vercel.projectId) {
+      secrets.VERCEL_TOKEN = vercel.token;
+      secrets.VERCEL_ORG_ID = vercel.orgId;
+      secrets.VERCEL_PROJECT_ID = vercel.projectId;
+    }
     try {
-      await client.setActionsSecrets(blog, {
-        WIKI_URL: `https://github.com/${owner}/${articleName}.git`,
-        PAT: pat,
-      });
+      await client.setActionsSecrets(blog, secrets);
     } catch (error) {
       if (error instanceof GitHubApiError && error.status === 404) {
         throw new Error("博客仓库不存在或无权访问，请重新检测后再试。");
       }
       throw error;
     }
+    return Boolean(vercel.token && vercel.orgId && vercel.projectId);
+  }
+
+  private readVercelSecrets(
+    settings: PluginSettings,
+  ): Readonly<{ token: string; orgId: string; projectId: string }> {
+    return {
+      token: settings.vercelToken.trim(),
+      orgId: settings.vercelOrgId.trim(),
+      projectId: settings.vercelProjectId.trim(),
+    };
   }
 
   // ------------------------------------------------------------------

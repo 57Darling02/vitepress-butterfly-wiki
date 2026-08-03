@@ -24,6 +24,10 @@ export interface PluginSettings {
 	pendingArticleRepo: string;
 	/** Retry marker for a generated blog repository not fully configured yet. */
 	pendingBlogRepo: string;
+	/** Optional Vercel deployment secrets; all three are required to enable. */
+	vercelToken: string;
+	vercelOrgId: string;
+	vercelProjectId: string;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -32,6 +36,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	blogRepoName: "",
 	pendingArticleRepo: "",
 	pendingBlogRepo: "",
+	vercelToken: "",
+	vercelOrgId: "",
+	vercelProjectId: "",
 };
 
 export interface PublisherSettingsActions {
@@ -70,6 +77,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 	private articleActionButton?: ButtonComponent;
 	private blogCheckButton?: ButtonComponent;
 	private blogActionButton?: ButtonComponent;
+	private vercelInputs: TextComponent[] = [];
 	private article: RepoAreaState = { state: "idle", check: null };
 	private blog: RepoAreaState = { state: "idle", check: null };
 	private isPatChecking = false;
@@ -92,6 +100,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		this.patButton = undefined;
 		this.patInput = undefined;
 		this.repositorySection = undefined;
+		this.vercelInputs = [];
 		this.articleStatus = undefined;
 		this.blogStatus = undefined;
 		this.articleCheckButton = undefined;
@@ -178,6 +187,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		}
 		this.renderArticleSection(this.repositorySection);
 		this.renderBlogSection(this.repositorySection);
+		this.renderVercelSection(this.repositorySection);
 
 		this.repositorySection.createEl("h3", { text: "日常操作" });
 		new Setting(this.repositorySection)
@@ -303,6 +313,63 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		});
 
 		this.updateRepoButtons("blog");
+	}
+
+	/**
+	 * Optional Vercel deployment: all three fields must be filled before the
+	 * blog repository configuration writes VERCEL_* secrets. Leaving any field
+	 * empty skips Vercel and keeps existing repository secrets untouched.
+	 */
+	private renderVercelSection(containerEl: HTMLElement): void {
+		containerEl.createEl("h3", { text: "可选：Vercel 部署" });
+		containerEl.createEl("p", {
+			cls: "vitepress-butterfly-publisher-hint",
+			text: "三项都填写后，配置博客仓库时会一并写入 VERCEL_TOKEN、VERCEL_ORG_ID、VERCEL_PROJECT_ID；留空则跳过。",
+		});
+
+		const fields: {
+			key: "vercelToken" | "vercelOrgId" | "vercelProjectId";
+			name: string;
+			desc: string;
+			placeholder: string;
+		}[] = [
+			{
+				key: "vercelToken",
+				name: "Vercel Token",
+				desc: "Vercel 账号 → Settings → Tokens 生成。",
+				placeholder: "vercel_token",
+			},
+			{
+				key: "vercelOrgId",
+				name: "Vercel Org ID",
+				desc: "Vercel 团队 Settings 页面中的 ID。",
+				placeholder: "team_xxx",
+			},
+			{
+				key: "vercelProjectId",
+				name: "Vercel Project ID",
+				desc: "需先在 Vercel 创建项目后，从项目 Settings 获取。",
+				placeholder: "prj_xxx",
+			},
+		];
+		for (const field of fields) {
+			new Setting(containerEl)
+				.setName(field.name)
+				.setDesc(field.desc)
+				.addText((text) => {
+					this.vercelInputs.push(text);
+					text.inputEl.type = "password";
+					text.inputEl.autocomplete = "off";
+					text.inputEl.spellcheck = false;
+					text.setPlaceholder(field.placeholder);
+					text.setValue(this.getSettings()[field.key]);
+					text.onChange((value) => {
+						void this.saveSettings({ [field.key]: value.trim() } as Partial<PluginSettings>).catch((error: unknown) => {
+							new Notice(this.errorMessage(error, "保存 Vercel 配置失败"));
+						});
+					});
+				});
+		}
 	}
 
 	/** Switches the two repo buttons (check + action) to match the state. */
@@ -452,7 +519,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 					: mode === "secrets"
 						? result.warning
 							? `✓ ${this.fullName(result)} 环境变量已更新`
-							: `✓ ${this.fullName(result)} 环境变量已更新，已触发构建`
+							: `✓ ${this.fullName(result)} 环境变量已更新${result.vercelConfigured ? "，已配置 Vercel" : ""}，已触发构建`
 					: result.created
 						? `✓ 已创建并配置 ${this.fullName(result)}`
 						: `✓ 已继续完成 ${this.fullName(result)} 的配置`,
@@ -597,6 +664,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			button?.setDisabled(!enabled || locked);
 		}
 		this.repositorySection?.toggleClass("is-locked", !this.isPatVerified());
+		this.vercelInputs.forEach((input) => input.setDisabled(this.isPatChecking || this.isActionRunning));
 		this.patInput?.setDisabled(this.isPatChecking || this.isActionRunning);
 		this.patButton?.setDisabled(this.isPatChecking || this.isActionRunning);
 	}

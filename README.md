@@ -87,6 +87,8 @@ GitHub → Settings → Developer settings
 
 博客仓库已有内容时，插件不会重置或覆盖，只更新 secrets。插件**不提供删除仓库**：如果残留了不想要的仓库，请到 GitHub 网页 `Settings → Danger Zone → Delete this repository` 删除。
 
+> 可选：如需同时部署到 Vercel，在插件设置的「可选：Vercel 部署」中填写 Token、Org ID、Project ID 三项；配置博客仓库时会一并写入 `VERCEL_TOKEN`、`VERCEL_ORG_ID`、`VERCEL_PROJECT_ID`。留空则跳过，不影响 GitHub Pages。
+
 ## 为什么这套流程更容易重试
 
 所有按钮都可以安全重复点击：
