@@ -162,6 +162,21 @@ export class BlogService {
     return this.syncArticleRepository();
   }
 
+  /** Existing article repository: update BLOG_REPO and PAT only. */
+  async configureArticleSecretsOnly(): Promise<RepositoryConfigurationResult> {
+    const settings = this.requireVerifiedRepositoryNames("配置文章仓库");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const article = { owner: user.login, name: validateRepoName(settings.repoName, "文章仓库") };
+    const blogName = validateRepoName(settings.blogRepoName, "博客仓库");
+
+    await this.writeArticleSecrets(client, article, user.login, blogName, settings.pat);
+    if (settings.pendingArticleRepo) {
+      await this.deps.saveSettings({ pendingArticleRepo: "" });
+    }
+    return { repository: article, created: false, initialized: false };
+  }
+
   /** Creates or force-syncs the article repository from the current Vault. */
   async createArticleRepository(): Promise<RepositoryConfigurationResult> {
     return this.syncArticleRepository();

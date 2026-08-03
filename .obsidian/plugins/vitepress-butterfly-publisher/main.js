@@ -3038,6 +3038,8 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.blogStatus = void 0;
     this.articleCheckButton = void 0;
     this.articleActionButton = void 0;
+    this.articleOverwriteWrap = void 0;
+    this.articleOverwriteCheckbox = void 0;
     this.blogCheckButton = void 0;
     this.blogActionButton = void 0;
     containerEl.createEl("h2", { text: "VitePress Butterfly \u53D1\u5E03" });
@@ -3151,12 +3153,25 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
         void this.runRepoCheck("article");
       });
     });
+    const overwriteControl = setting.controlEl.createSpan({ cls: "vpb-overwrite-toggle" });
+    overwriteControl.createEl("label", { text: "\u8986\u76D6" });
+    const overwriteCheckbox = overwriteControl.createEl("input", {
+      attr: { type: "checkbox" }
+    });
+    this.articleOverwriteWrap = overwriteControl;
+    this.articleOverwriteCheckbox = overwriteCheckbox;
+    overwriteCheckbox.addEventListener("change", () => {
+      this.updateRepoButtons("article");
+    });
     setting.addButton((button) => {
       this.articleActionButton = button;
       button.setCta();
       button.onClick(() => {
         if (this.article.state === "exists") {
-          void this.runRepoAction("article", "overwrite");
+          void this.runRepoAction(
+            "article",
+            this.articleOverwriteCheckbox?.checked ? "overwrite" : "secrets"
+          );
         } else if (this.article.state === "missing") {
           void this.runRepoAction("article", "create");
         }
@@ -3274,11 +3289,18 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
         check.setButtonText("\u68C0\u6D4B\u4E2D\u2026");
         this.setButtonLoading(check, true);
         this.setButtonVisible(action, false);
+        this.setToggleVisible(this.articleOverwriteWrap, false);
         break;
       case "exists":
         check.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
         this.setButtonLoading(check, false);
-        action.setButtonText(which === "article" ? "\u8986\u76D6\u5E76\u914D\u7F6E" : "\u4EC5\u914D\u7F6E\u53D8\u91CF");
+        if (which === "article") {
+          action.setButtonText("\u914D\u7F6E");
+          this.setToggleVisible(this.articleOverwriteWrap, true);
+        } else {
+          action.setButtonText("\u4EC5\u914D\u7F6E\u53D8\u91CF");
+          this.setToggleVisible(this.articleOverwriteWrap, false);
+        }
         this.setButtonLoading(action, false);
         this.setButtonVisible(action, true);
         break;
@@ -3288,6 +3310,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
         action.setButtonText("\u521B\u5EFA\u4ED3\u5E93\u5E76\u914D\u7F6E");
         this.setButtonLoading(action, false);
         this.setButtonVisible(action, true);
+        this.setToggleVisible(this.articleOverwriteWrap, false);
         break;
       case "working":
         check.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
@@ -3295,16 +3318,23 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
         action.setButtonText("\u914D\u7F6E\u4E2D\u2026");
         this.setButtonLoading(action, true);
         this.setButtonVisible(action, true);
+        this.setToggleVisible(this.articleOverwriteWrap, false);
         break;
       default:
         check.setButtonText("\u68C0\u6D4B\u4ED3\u5E93");
         this.setButtonLoading(check, false);
         this.setButtonVisible(action, false);
+        this.setToggleVisible(this.articleOverwriteWrap, false);
         break;
     }
   }
   setButtonVisible(button, visible) {
     button.buttonEl.style.display = visible ? "" : "none";
+  }
+  setToggleVisible(wrap, visible) {
+    if (wrap) {
+      wrap.style.display = visible ? "" : "none";
+    }
   }
   setButtonLoading(button, loading) {
     button.buttonEl.classList.toggle("vpb-check-running", loading);
@@ -3364,7 +3394,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.updateAvailability();
     await yieldToUi();
     try {
-      const result = which === "article" ? mode === "overwrite" ? await this.actions.onConfigureArticleRepository() : await this.actions.onCreateArticleRepository() : mode === "secrets" ? await this.actions.onConfigureBlogSecretsOnly() : await this.actions.onCreateBlogRepository();
+      const result = which === "article" ? mode === "overwrite" ? await this.actions.onConfigureArticleRepository() : mode === "secrets" ? await this.actions.onConfigureArticleSecretsOnly() : await this.actions.onCreateArticleRepository() : mode === "secrets" ? await this.actions.onConfigureBlogSecretsOnly() : await this.actions.onCreateBlogRepository();
       area.check = {
         exists: true,
         repository: result.repository,
@@ -3375,7 +3405,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       this.setStatus(
         status,
         "ok",
-        mode === "overwrite" ? `\u2713 \u5DF2\u8986\u76D6\u5E76\u914D\u7F6E ${this.fullName(result)}` : mode === "secrets" ? result.warning ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0${result.vercelConfigured ? "\uFF0C\u5DF2\u914D\u7F6E Vercel" : ""}\uFF0C\u5DF2\u89E6\u53D1\u6784\u5EFA` : result.created ? `\u2713 \u5DF2\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u914D\u7F6E`
+        mode === "overwrite" ? `\u2713 \u5DF2\u8986\u76D6\u5E76\u914D\u7F6E ${this.fullName(result)}` : mode === "secrets" ? which === "article" ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : result.warning ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0${result.vercelConfigured ? "\uFF0C\u5DF2\u914D\u7F6E Vercel" : ""}\uFF0C\u5DF2\u89E6\u53D1\u6784\u5EFA` : result.created ? `\u2713 \u5DF2\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u914D\u7F6E`
       );
       if (result.warning) {
         new import_obsidian.Notice(result.warning, 8e3);
@@ -3872,6 +3902,19 @@ var BlogService = class {
   async configureArticleRepository() {
     return this.syncArticleRepository();
   }
+  /** Existing article repository: update BLOG_REPO and PAT only. */
+  async configureArticleSecretsOnly() {
+    const settings = this.requireVerifiedRepositoryNames("\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const article = { owner: user.login, name: validateRepoName(settings.repoName, "\u6587\u7AE0\u4ED3\u5E93") };
+    const blogName = validateRepoName(settings.blogRepoName, "\u535A\u5BA2\u4ED3\u5E93");
+    await this.writeArticleSecrets(client, article, user.login, blogName, settings.pat);
+    if (settings.pendingArticleRepo) {
+      await this.deps.saveSettings({ pendingArticleRepo: "" });
+    }
+    return { repository: article, created: false, initialized: false };
+  }
   /** Creates or force-syncs the article repository from the current Vault. */
   async createArticleRepository() {
     return this.syncArticleRepository();
@@ -4367,6 +4410,7 @@ var VitePressButterflyPublisher = class extends import_obsidian4.Plugin {
         onCheckArticleRepository: () => this.blog.checkArticleRepository(),
         onCheckBlogRepository: () => this.blog.checkBlogRepository(),
         onConfigureArticleRepository: () => this.blog.configureArticleRepository(),
+        onConfigureArticleSecretsOnly: () => this.blog.configureArticleSecretsOnly(),
         onCreateArticleRepository: () => this.blog.createArticleRepository(),
         onConfigureBlogSecretsOnly: () => this.blog.configureBlogSecretsOnly(),
         onCreateBlogRepository: () => this.blog.createBlogRepository(),

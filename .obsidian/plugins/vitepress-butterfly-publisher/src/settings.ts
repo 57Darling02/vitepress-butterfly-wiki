@@ -46,6 +46,7 @@ export interface PublisherSettingsActions {
 	onCheckArticleRepository(): Promise<RepoCheckResult>;
 	onCheckBlogRepository(): Promise<RepoCheckResult>;
 	onConfigureArticleRepository(): Promise<RepositoryConfigurationResult>;
+	onConfigureArticleSecretsOnly(): Promise<RepositoryConfigurationResult>;
 	onCreateArticleRepository(): Promise<RepositoryConfigurationResult>;
 	onConfigureBlogSecretsOnly(): Promise<RepositoryConfigurationResult>;
 	onCreateBlogRepository(): Promise<RepositoryConfigurationResult>;
@@ -75,6 +76,8 @@ export class PublisherSettingsTab extends PluginSettingTab {
 	private blogStatus?: HTMLSpanElement;
 	private articleCheckButton?: ButtonComponent;
 	private articleActionButton?: ButtonComponent;
+	private articleOverwriteWrap?: HTMLElement;
+	private articleOverwriteCheckbox?: HTMLInputElement;
 	private blogCheckButton?: ButtonComponent;
 	private blogActionButton?: ButtonComponent;
 	private vercelInputs: TextComponent[] = [];
@@ -105,6 +108,8 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		this.blogStatus = undefined;
 		this.articleCheckButton = undefined;
 		this.articleActionButton = undefined;
+		this.articleOverwriteWrap = undefined;
+		this.articleOverwriteCheckbox = undefined;
 		this.blogCheckButton = undefined;
 		this.blogActionButton = undefined;
 
@@ -243,12 +248,26 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			});
 		});
 
+		const overwriteControl = setting.controlEl.createSpan({ cls: "vpb-overwrite-toggle" });
+		overwriteControl.createEl("label", { text: "覆盖" });
+		const overwriteCheckbox = overwriteControl.createEl("input", {
+			attr: { type: "checkbox" },
+		});
+		this.articleOverwriteWrap = overwriteControl;
+		this.articleOverwriteCheckbox = overwriteCheckbox;
+		overwriteCheckbox.addEventListener("change", () => {
+			this.updateRepoButtons("article");
+		});
+
 		setting.addButton((button) => {
 			this.articleActionButton = button;
 			button.setCta();
 			button.onClick(() => {
 				if (this.article.state === "exists") {
-					void this.runRepoAction("article", "overwrite");
+					void this.runRepoAction(
+						"article",
+						this.articleOverwriteCheckbox?.checked ? "overwrite" : "secrets",
+					);
 				} else if (this.article.state === "missing") {
 					void this.runRepoAction("article", "create");
 				}
@@ -386,11 +405,18 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				check.setButtonText("检测中…");
 				this.setButtonLoading(check, true);
 				this.setButtonVisible(action, false);
+				this.setToggleVisible(this.articleOverwriteWrap, false);
 				break;
 			case "exists":
 				check.setButtonText("重新检测");
 				this.setButtonLoading(check, false);
-				action.setButtonText(which === "article" ? "覆盖并配置" : "仅配置变量");
+				if (which === "article") {
+					action.setButtonText("配置");
+					this.setToggleVisible(this.articleOverwriteWrap, true);
+				} else {
+					action.setButtonText("仅配置变量");
+					this.setToggleVisible(this.articleOverwriteWrap, false);
+				}
 				this.setButtonLoading(action, false);
 				this.setButtonVisible(action, true);
 				break;
@@ -400,6 +426,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				action.setButtonText("创建仓库并配置");
 				this.setButtonLoading(action, false);
 				this.setButtonVisible(action, true);
+				this.setToggleVisible(this.articleOverwriteWrap, false);
 				break;
 			case "working":
 				check.setButtonText("重新检测");
@@ -407,11 +434,13 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				action.setButtonText("配置中…");
 				this.setButtonLoading(action, true);
 				this.setButtonVisible(action, true);
+				this.setToggleVisible(this.articleOverwriteWrap, false);
 				break;
 			default:
 				check.setButtonText("检测仓库");
 				this.setButtonLoading(check, false);
 				this.setButtonVisible(action, false);
+				this.setToggleVisible(this.articleOverwriteWrap, false);
 				break;
 		}
 	}
@@ -420,6 +449,12 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		// The HTML `hidden` attribute is overridden by Obsidian's button CSS
 		// (display rules), so visibility is controlled via inline style.
 		button.buttonEl.style.display = visible ? "" : "none";
+	}
+
+	private setToggleVisible(wrap: HTMLElement | undefined, visible: boolean): void {
+		if (wrap) {
+			wrap.style.display = visible ? "" : "none";
+		}
 	}
 
 	private setButtonLoading(button: ButtonComponent, loading: boolean): void {
@@ -499,7 +534,9 @@ export class PublisherSettingsTab extends PluginSettingTab {
 			const result = which === "article"
 				? mode === "overwrite"
 					? await this.actions.onConfigureArticleRepository()
-					: await this.actions.onCreateArticleRepository()
+					: mode === "secrets"
+						? await this.actions.onConfigureArticleSecretsOnly()
+						: await this.actions.onCreateArticleRepository()
 				: mode === "secrets"
 					? await this.actions.onConfigureBlogSecretsOnly()
 					: await this.actions.onCreateBlogRepository();
@@ -517,9 +554,11 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				mode === "overwrite"
 					? `✓ 已覆盖并配置 ${this.fullName(result)}`
 					: mode === "secrets"
-						? result.warning
+						? which === "article"
 							? `✓ ${this.fullName(result)} 环境变量已更新`
-							: `✓ ${this.fullName(result)} 环境变量已更新${result.vercelConfigured ? "，已配置 Vercel" : ""}，已触发构建`
+							: result.warning
+								? `✓ ${this.fullName(result)} 环境变量已更新`
+								: `✓ ${this.fullName(result)} 环境变量已更新${result.vercelConfigured ? "，已配置 Vercel" : ""}，已触发构建`
 					: result.created
 						? `✓ 已创建并配置 ${this.fullName(result)}`
 						: `✓ 已继续完成 ${this.fullName(result)} 的配置`,
