@@ -3322,7 +3322,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       this.setStatus(
         status,
         "ok",
-        mode === "overwrite" ? `\u2713 \u5DF2\u8986\u76D6\u5E76\u914D\u7F6E ${this.fullName(result)}` : mode === "secrets" ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : result.created ? `\u2713 \u5DF2\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u914D\u7F6E`
+        mode === "overwrite" ? `\u2713 \u5DF2\u8986\u76D6\u5E76\u914D\u7F6E ${this.fullName(result)}` : mode === "secrets" ? result.warning ? `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0` : `\u2713 ${this.fullName(result)} \u73AF\u5883\u53D8\u91CF\u5DF2\u66F4\u65B0\uFF0C\u5DF2\u89E6\u53D1\u6784\u5EFA` : result.created ? `\u2713 \u5DF2\u521B\u5EFA\u5E76\u914D\u7F6E ${this.fullName(result)}` : `\u2713 \u5DF2\u7EE7\u7EED\u5B8C\u6210 ${this.fullName(result)} \u7684\u914D\u7F6E`
       );
       if (result.warning) {
         new import_obsidian.Notice(result.warning, 8e3);
@@ -3886,10 +3886,11 @@ var BlogService = class {
     const articleName = validateRepoName(settings.repoName, "\u6587\u7AE0\u4ED3\u5E93");
     const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "\u535A\u5BA2\u4ED3\u5E93") };
     await this.writeBlogSecrets(client, blog, user.login, articleName, settings.pat);
+    const warning = await this.dispatchBlogBuild(client, blog);
     if (settings.pendingBlogRepo) {
       await this.deps.saveSettings({ pendingBlogRepo: "" });
     }
-    return { repository: blog, created: false, initialized: false };
+    return { repository: blog, created: false, initialized: false, warning };
   }
   /**
    * Missing blog repository: create it once from the official GitHub
@@ -3934,12 +3935,8 @@ var BlogService = class {
       } catch (error) {
         warning = `Pages \u672A\u80FD\u81EA\u52A8\u914D\u7F6E\uFF1A${errorMessage(error)}\u3002\u53EF\u7A0D\u540E\u5728 GitHub \u4ED3\u5E93 Settings \u2192 Pages \u4E2D\u9009\u62E9 GitHub Actions\u3002`;
       }
-      try {
-        await client.dispatchRepositoryEvent(blog, "contents-updated");
-      } catch (error) {
-        const dispatchWarning = `\u9996\u6B21\u6784\u5EFA\u672A\u80FD\u81EA\u52A8\u89E6\u53D1\uFF1A${errorMessage(error)}\u3002\u53EF\u7A0D\u540E\u70B9\u51FB\u300C\u89E6\u53D1\u6784\u5EFA\u300D\u3002`;
-        warning = warning ? `${warning} ${dispatchWarning}` : dispatchWarning;
-      }
+      const dispatchWarning = await this.dispatchBlogBuild(client, blog);
+      warning = warning && dispatchWarning ? `${warning} ${dispatchWarning}` : warning ?? dispatchWarning;
       await this.deps.saveSettings({ pendingBlogRepo: "" });
     }
     return {
@@ -3948,6 +3945,14 @@ var BlogService = class {
       initialized: created || pending,
       warning
     };
+  }
+  async dispatchBlogBuild(client, blog) {
+    try {
+      await client.dispatchRepositoryEvent(blog, "contents-updated");
+    } catch (error) {
+      return `\u6784\u5EFA\u672A\u80FD\u81EA\u52A8\u89E6\u53D1\uFF1A${errorMessage(error)}\u3002\u53EF\u7A0D\u540E\u70B9\u51FB\u300C\u89E6\u53D1\u6784\u5EFA\u300D\u3002`;
+    }
+    return void 0;
   }
   async writeBlogSecrets(client, blog, owner, articleName, pat) {
     try {

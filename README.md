@@ -83,7 +83,7 @@ GitHub → Settings → Developer settings
 同样先点 **检测仓库**，再按结果选择：
 
 - **不存在** → 点 **创建仓库并配置**：通过 GitHub 的 **Use this template API**，从 `57Darling02/VitePress_butterfly` 一次性创建公开仓库，再配置 secrets、GitHub Pages 和首次构建
-- **已存在** → 点 **仅配置变量**：不修改仓库内容，只更新 `WIKI_URL` 和 `PAT`
+- **已存在** → 点 **仅配置变量**：不修改仓库内容，更新 `WIKI_URL` 和 `PAT` 后触发一次构建
 
 博客仓库已有内容时，插件不会重置或覆盖，只更新 secrets。插件**不提供删除仓库**：如果残留了不想要的仓库，请到 GitHub 网页 `Settings → Danger Zone → Delete this repository` 删除。
 
@@ -96,6 +96,7 @@ GitHub → Settings → Developer settings
 - 主题使用一次 Template API 创建，不再逐文件复制，显著减少网络请求
 - 新建文章仓库前会先完成本地 Git 准备，避免本地错误在 GitHub 留下空仓库
 - 如果远端创建成功但响应中断，插件会记录未完成状态；重新点击同一个按钮会继续完成上传或配置
+- 初始化早期的 Push 或 dispatch 遇到另一仓库尚未就绪时会成功跳过；最后一次有效触发才会构建
 - Pages 或首次构建触发失败只会显示警告，不会把已成功创建和配置的仓库判定为失败
 - 每次 GitHub 请求最长等待 15 秒，超时后按钮会恢复，可直接重试
 
@@ -167,7 +168,7 @@ layout: doc
 
 ### 网络中断后要删除仓库重来吗？
 
-不需要。直接重新点击刚才的配置按钮。文章仓库会继续上传或覆盖当前 `main`，博客仓库会继续完成 secrets、Pages 和构建配置。
+不需要。直接重新点击刚才的配置按钮。文章仓库会继续上传或覆盖当前 `main`，博客仓库会继续完成 secrets、Pages 和构建配置。初始化中较早的构建可能成功跳过，最后一次有效触发会部署。
 
 ### 已有仓库会被覆盖吗？
 

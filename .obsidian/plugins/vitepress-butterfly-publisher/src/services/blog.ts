@@ -246,10 +246,13 @@ export class BlogService {
     const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "博客仓库") };
 
     await this.writeBlogSecrets(client, blog, user.login, articleName, settings.pat);
+
+    const warning = await this.dispatchBlogBuild(client, blog);
+
     if (settings.pendingBlogRepo) {
       await this.deps.saveSettings({ pendingBlogRepo: "" });
     }
-    return { repository: blog, created: false, initialized: false };
+    return { repository: blog, created: false, initialized: false, warning };
   }
 
   /**
@@ -301,14 +304,10 @@ export class BlogService {
         warning = `Pages 未能自动配置：${errorMessage(error)}。可稍后在 GitHub 仓库 Settings → Pages 中选择 GitHub Actions。`;
       }
 
-      // Dispatch comes last. A failure here does not undo repository creation
-      // or secret configuration and can be retried manually later.
-      try {
-        await client.dispatchRepositoryEvent(blog, "contents-updated");
-      } catch (error) {
-        const dispatchWarning = `首次构建未能自动触发：${errorMessage(error)}。可稍后点击「触发构建」。`;
-        warning = warning ? `${warning} ${dispatchWarning}` : dispatchWarning;
-      }
+      const dispatchWarning = await this.dispatchBlogBuild(client, blog);
+      warning = warning && dispatchWarning
+        ? `${warning} ${dispatchWarning}`
+        : warning ?? dispatchWarning;
       await this.deps.saveSettings({ pendingBlogRepo: "" });
     }
 
@@ -318,6 +317,18 @@ export class BlogService {
       initialized: created || pending,
       warning,
     };
+  }
+
+  private async dispatchBlogBuild(
+    client: GitHubClient,
+    blog: GitHubRepositoryRef,
+  ): Promise<string | undefined> {
+    try {
+      await client.dispatchRepositoryEvent(blog, "contents-updated");
+    } catch (error) {
+      return `构建未能自动触发：${errorMessage(error)}。可稍后点击「触发构建」。`;
+    }
+    return undefined;
   }
 
   private async writeBlogSecrets(

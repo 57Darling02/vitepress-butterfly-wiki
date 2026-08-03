@@ -450,7 +450,9 @@ export class PublisherSettingsTab extends PluginSettingTab {
 				mode === "overwrite"
 					? `✓ 已覆盖并配置 ${this.fullName(result)}`
 					: mode === "secrets"
-						? `✓ ${this.fullName(result)} 环境变量已更新`
+						? result.warning
+							? `✓ ${this.fullName(result)} 环境变量已更新`
+							: `✓ ${this.fullName(result)} 环境变量已更新，已触发构建`
 					: result.created
 						? `✓ 已创建并配置 ${this.fullName(result)}`
 						: `✓ 已继续完成 ${this.fullName(result)} 的配置`,
