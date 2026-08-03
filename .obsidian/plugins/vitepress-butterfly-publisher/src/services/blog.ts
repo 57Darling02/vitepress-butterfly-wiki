@@ -97,6 +97,9 @@ export class BlogService {
       throw new Error("PAT 已在检测过程中修改，请重新检测。");
     }
     this.verifiedPat = pat;
+    // The PAT is now verified: sync it into obsidian-git so daily pushes use
+    // the same validated credential. A missing git plugin is not an error.
+    this.syncGitCredentials(user.login, pat);
     return {
       login: user.login,
       suggestedArticleRepoName: sanitizeRepoName(this.deps.app.vault.getName(), "my-blog-wiki"),
@@ -520,6 +523,15 @@ export class BlogService {
       return false;
     }
     return false;
+  }
+
+  private syncGitCredentials(owner: string, pat: string): void {
+    const registry = (this.deps.app as AppWithPluginRegistry).plugins;
+    const plugin = registry?.getPlugin("obsidian-git") as ObsidianGitPlugin | null | undefined;
+    if (plugin?.localStorage) {
+      plugin.localStorage.setUsername(owner);
+      plugin.localStorage.setPassword(pat);
+    }
   }
 
   private async getObsidianGit(

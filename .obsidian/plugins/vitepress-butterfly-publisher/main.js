@@ -3821,6 +3821,7 @@ var BlogService = class {
       throw new Error("PAT \u5DF2\u5728\u68C0\u6D4B\u8FC7\u7A0B\u4E2D\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u68C0\u6D4B\u3002");
     }
     this.verifiedPat = pat;
+    this.syncGitCredentials(user.login, pat);
     return {
       login: user.login,
       suggestedArticleRepoName: sanitizeRepoName(this.deps.app.vault.getName(), "my-blog-wiki"),
@@ -4161,6 +4162,14 @@ var BlogService = class {
       return false;
     }
     return false;
+  }
+  syncGitCredentials(owner, pat) {
+    const registry = this.deps.app.plugins;
+    const plugin = registry?.getPlugin("obsidian-git");
+    if (plugin?.localStorage) {
+      plugin.localStorage.setUsername(owner);
+      plugin.localStorage.setPassword(pat);
+    }
   }
   async getObsidianGit(repository, pat) {
     const registry = this.deps.app.plugins;
