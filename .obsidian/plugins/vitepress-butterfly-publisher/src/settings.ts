@@ -70,6 +70,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 	private patInput?: TextComponent;
 	private repositorySection?: HTMLElement;
 	private sectionHint?: HTMLElement;
+	private topHint?: HTMLElement;
 	private articleInput?: TextComponent;
 	private blogInput?: TextComponent;
 	private articleStatus?: HTMLSpanElement;
@@ -103,6 +104,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		this.patButton = undefined;
 		this.patInput = undefined;
 		this.repositorySection = undefined;
+		this.topHint = undefined;
 		this.vercelInputs = [];
 		this.articleStatus = undefined;
 		this.blogStatus = undefined;
@@ -114,9 +116,12 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		this.blogActionButton = undefined;
 
 		containerEl.createEl("h2", { text: "VitePress Butterfly 发布" });
-		containerEl.createEl("p", {
-			text: "依次完成：验证 PAT → 检测并配置文章仓库 → 检测并配置博客仓库。",
-		});
+		if (!this.isPatVerified()) {
+			this.topHint = containerEl.createEl("p", {
+				cls: "vitepress-butterfly-publisher-hint",
+				text: "请先进行 PAT 连通性检测",
+			});
+		}
 
 		this.renderPat(containerEl);
 		this.renderRepositories(containerEl);
@@ -628,6 +633,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 			this.patButton?.setButtonText("重新检测");
 			this.sectionHint?.remove();
+			this.topHint?.remove();
 			this.setStatus(status, "ok", `✓ 已连接 @${result.login}`);
 			this.updateRepoStatusHints();
 			this.updateAvailability();

@@ -3033,6 +3033,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.patButton = void 0;
     this.patInput = void 0;
     this.repositorySection = void 0;
+    this.topHint = void 0;
     this.vercelInputs = [];
     this.articleStatus = void 0;
     this.blogStatus = void 0;
@@ -3043,9 +3044,12 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.blogCheckButton = void 0;
     this.blogActionButton = void 0;
     containerEl.createEl("h2", { text: "VitePress Butterfly \u53D1\u5E03" });
-    containerEl.createEl("p", {
-      text: "\u4F9D\u6B21\u5B8C\u6210\uFF1A\u9A8C\u8BC1 PAT \u2192 \u68C0\u6D4B\u5E76\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93 \u2192 \u68C0\u6D4B\u5E76\u914D\u7F6E\u535A\u5BA2\u4ED3\u5E93\u3002"
-    });
+    if (!this.isPatVerified()) {
+      this.topHint = containerEl.createEl("p", {
+        cls: "vitepress-butterfly-publisher-hint",
+        text: "\u8BF7\u5148\u8FDB\u884C PAT \u8FDE\u901A\u6027\u68C0\u6D4B"
+      });
+    }
     this.renderPat(containerEl);
     this.renderRepositories(containerEl);
     this.updateAvailability();
@@ -3460,6 +3464,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
       }
       this.patButton?.setButtonText("\u91CD\u65B0\u68C0\u6D4B");
       this.sectionHint?.remove();
+      this.topHint?.remove();
       this.setStatus(status, "ok", `\u2713 \u5DF2\u8FDE\u63A5 @${result.login}`);
       this.updateRepoStatusHints();
       this.updateAvailability();
