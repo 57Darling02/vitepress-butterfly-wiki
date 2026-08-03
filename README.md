@@ -133,7 +133,6 @@ Publisher 会把 GitHub 用户名和 PAT 写入 obsidian-git 的本地凭据；�
 title: Hello World
 date: 2026-01-01
 author: Me
-cover: ./cover.webp
 layout: doc
 ---
 

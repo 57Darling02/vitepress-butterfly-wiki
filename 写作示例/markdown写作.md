@@ -19,7 +19,6 @@ layout: doc
 title: Hello World
 date: 2026-01-01
 author: Me
-cover: ./cover.png 
 layout: doc
 ---
 ```
