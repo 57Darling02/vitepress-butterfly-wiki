@@ -115,7 +115,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 
 		containerEl.createEl("h2", { text: "VitePress Butterfly 发布" });
 		containerEl.createEl("p", {
-			text: "依次完成：验证 PAT → 检测并配置文章仓库 → 检测并配置博客仓库。每个按钮都可安全重试，网络中断不会重复创建仓库。",
+			text: "依次完成：验证 PAT → 检测并配置文章仓库 → 检测并配置博客仓库。",
 		});
 
 		this.renderPat(containerEl);
@@ -526,7 +526,7 @@ export class PublisherSettingsTab extends PluginSettingTab {
 		this.isActionRunning = true;
 		area.state = "working";
 		this.updateRepoButtons(which);
-		this.setStatus(status, "loading", "正在配置…（网络中断可直接重试）");
+		this.setStatus(status, "loading", "正在配置…");
 		this.updateAvailability();
 		await yieldToUi();
 

@@ -3044,7 +3044,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.blogActionButton = void 0;
     containerEl.createEl("h2", { text: "VitePress Butterfly \u53D1\u5E03" });
     containerEl.createEl("p", {
-      text: "\u4F9D\u6B21\u5B8C\u6210\uFF1A\u9A8C\u8BC1 PAT \u2192 \u68C0\u6D4B\u5E76\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93 \u2192 \u68C0\u6D4B\u5E76\u914D\u7F6E\u535A\u5BA2\u4ED3\u5E93\u3002\u6BCF\u4E2A\u6309\u94AE\u90FD\u53EF\u5B89\u5168\u91CD\u8BD5\uFF0C\u7F51\u7EDC\u4E2D\u65AD\u4E0D\u4F1A\u91CD\u590D\u521B\u5EFA\u4ED3\u5E93\u3002"
+      text: "\u4F9D\u6B21\u5B8C\u6210\uFF1A\u9A8C\u8BC1 PAT \u2192 \u68C0\u6D4B\u5E76\u914D\u7F6E\u6587\u7AE0\u4ED3\u5E93 \u2192 \u68C0\u6D4B\u5E76\u914D\u7F6E\u535A\u5BA2\u4ED3\u5E93\u3002"
     });
     this.renderPat(containerEl);
     this.renderRepositories(containerEl);
@@ -3390,7 +3390,7 @@ var PublisherSettingsTab = class extends import_obsidian.PluginSettingTab {
     this.isActionRunning = true;
     area.state = "working";
     this.updateRepoButtons(which);
-    this.setStatus(status, "loading", "\u6B63\u5728\u914D\u7F6E\u2026\uFF08\u7F51\u7EDC\u4E2D\u65AD\u53EF\u76F4\u63A5\u91CD\u8BD5\uFF09");
+    this.setStatus(status, "loading", "\u6B63\u5728\u914D\u7F6E\u2026");
     this.updateAvailability();
     await yieldToUi();
     try {
