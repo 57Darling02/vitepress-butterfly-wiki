@@ -3,7 +3,7 @@ import esbuild from 'esbuild';
 const production = process.argv[2] === 'production';
 const context = await esbuild.context({
   banner: {
-    js: '/* Obsidian plugin: VitePress Butterfly Publisher */',
+    js: '/* Obsidian plugin: VitePress Butterfly */',
   },
   bundle: true,
   entryPoints: ['src/main.ts'],

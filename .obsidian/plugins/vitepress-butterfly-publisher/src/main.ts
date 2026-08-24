@@ -1,13 +1,10 @@
-import { Notice, Plugin } from "obsidian";
+import { Notice, Plugin, TFile } from "obsidian";
 
-import {
-	DEFAULT_SETTINGS,
-	PluginSettings,
-	PublisherSettingsTab,
-} from "./settings";
+import { DEFAULT_SETTINGS, PluginSettings } from "./settings";
 import { BlogService } from "./services/blog";
+import { ConsoleView, CONSOLE_VIEW_TYPE } from "./ui/ConsoleView";
 import { NewArticleModal } from "./ui/NewArticleModal";
-import { TFile } from "obsidian";
+import { SiteConfigModal } from "./ui/SiteConfigModal";
 
 export default class VitePressButterflyPublisher extends Plugin {
 	settings!: PluginSettings;
@@ -24,19 +21,25 @@ export default class VitePressButterflyPublisher extends Plugin {
 			},
 		});
 
-		this.addSettingTab(
-			new PublisherSettingsTab(this.app, this, () => this.settings, (changes) => this.updateSettings(changes), {
-				onCheckPat: () => this.blog.checkPat(),
-				onCheckArticleRepository: () => this.blog.checkArticleRepository(),
-				onCheckBlogRepository: () => this.blog.checkBlogRepository(),
-				onConfigureArticleRepository: () => this.blog.configureArticleRepository(),
-				onConfigureArticleSecretsOnly: () => this.blog.configureArticleSecretsOnly(),
-				onCreateArticleRepository: () => this.blog.createArticleRepository(),
-				onConfigureBlogSecretsOnly: () => this.blog.configureBlogSecretsOnly(),
-				onCreateBlogRepository: () => this.blog.createBlogRepository(),
-				onTrigger: () => this.blog.triggerDeploy(),
+		this.registerView(
+			CONSOLE_VIEW_TYPE,
+			(leaf) => new ConsoleView(leaf, {
+				app: this.app,
+				blog: this.blog,
+				getSettings: () => this.settings,
+				saveSettings: (changes) => this.updateSettings(changes),
+				createArticle: (title, directory) => this.createArticle(title, directory),
 			}),
 		);
+
+		this.addRibbonIcon("rocket", "打开 VitePress Butterfly 控制台", () => {
+			void this.openConsole();
+		});
+		this.addCommand({
+			id: "open-console",
+			name: "打开博客控制台",
+			callback: () => this.openConsole(),
+		});
 		this.addCommand({
 			id: "trigger-deploy",
 			name: "触发博客重建",
@@ -51,6 +54,27 @@ export default class VitePressButterflyPublisher extends Plugin {
 				}).open();
 			},
 		});
+		this.addCommand({
+			id: "configure-site",
+			name: "配置站点",
+			callback: () => {
+				new SiteConfigModal(this.app, () => undefined).open();
+			},
+		});
+	}
+
+	async openConsole(): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(CONSOLE_VIEW_TYPE)[0];
+		if (existing) {
+			await this.app.workspace.revealLeaf(existing);
+			return;
+		}
+
+		// Prefer the right sidebar on desktop; fall back to the active pane
+		// on mobile where sidebar leaves do not exist.
+		const leaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf(false);
+		await leaf.setViewState({ type: CONSOLE_VIEW_TYPE, active: true });
+		await this.app.workspace.revealLeaf(leaf);
 	}
 
 	onunload(): void {
@@ -69,41 +93,61 @@ export default class VitePressButterflyPublisher extends Plugin {
 			vercelToken: saved?.vercelToken ?? "",
 			vercelOrgId: saved?.vercelOrgId ?? "",
 			vercelProjectId: saved?.vercelProjectId ?? "",
+			githubConnection: saved?.githubConnection ?? null,
+			initialization: saved?.initialization ?? null,
+			lastDeploy: saved?.lastDeploy ?? null,
 		};
 	}
 
 	async updateSettings(changes: Partial<PluginSettings>): Promise<void> {
+		let merged = { ...this.settings, ...changes };
+
+		// A different PAT invalidates the persisted connection, initialization
+		// and deployment record: repository secrets still hold the old token.
 		if (
 			changes.pat !== undefined
 			&& changes.pat.trim() !== this.settings.pat.trim()
 		) {
 			this.blog.invalidatePat();
+			merged = {
+				...merged,
+				githubConnection: null,
+				initialization: null,
+				lastDeploy: null,
+			};
 		}
-		this.settings = { ...this.settings, ...changes };
+
+		this.settings = merged;
 		await this.saveData(this.settings);
 	}
 
-
 	private async createArticle(title: string, directory: string): Promise<void> {
-		const safeName = title.trim().replace(/[\\/:*?"<>|#^\[\]]/g, "-").replace(/\s+/g, "-");
+		const safeTitle = title.trim();
+		const safeName = sanitizePathSegment(safeTitle);
 		if (!safeName) {
 			throw new Error("无法从标题生成文件名。");
 		}
 
-		const folder = directory.trim().replace(/^\/+|\/+$/g, "");
+		const folder = directory
+			.split("/")
+			.map(sanitizePathSegment)
+			.filter((segment) => segment && segment !== "." && segment !== "..")
+			.join("/");
 		const path = folder ? `${folder}/${safeName}.md` : `${safeName}.md`;
 		if (this.app.vault.getFileByPath(path)) {
 			throw new Error(`文件已存在：${path}`);
 		}
 
+		// JSON 字符串是合法的 YAML double-quoted scalar，标题中的冒号、
+		// 引号和井号不会破坏 frontmatter。
 		const frontmatter = [
 			"---",
-			`title: ${title.trim()}`,
+			`title: ${JSON.stringify(safeTitle)}`,
 			`date: ${new Date().toISOString().slice(0, 10)}`,
 			"layout: doc",
 			"---",
 			"",
-			`# ${title.trim()}`,
+			`# ${safeTitle}`,
 			"",
 		].join("\n");
 
@@ -121,4 +165,12 @@ export default class VitePressButterflyPublisher extends Plugin {
 			new Notice(`${name}失败：${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
+}
+
+function sanitizePathSegment(value: string): string {
+	return value
+		.trim()
+		.replace(/[\\/:*?"<>|#^[\]]/g, "-")
+		.replace(/\s+/g, "-")
+		.replace(/^-+|-+$/g, "");
 }

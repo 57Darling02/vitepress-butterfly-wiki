@@ -56,7 +56,7 @@ layout: doc
 # Hello World
 ```
 
-文章需要带 `layout: doc`才 会进入首页、归档、标签等文章流。建议把layout属性放在最后。
+文章需要带 `layout: doc` 才会进入首页文章流、标签与目录筛选。建议把 layout 属性放在最后。
 
 ### markdown写作
 见[markdown写作语法](/用法拓展/markdown写作)
@@ -68,5 +68,4 @@ layout: doc
 
 ## 进阶技巧
 只需要一点vue知识，即可部署自己的页面。详情见[自定义一个页面](/用法拓展/写一个页面)
-
 

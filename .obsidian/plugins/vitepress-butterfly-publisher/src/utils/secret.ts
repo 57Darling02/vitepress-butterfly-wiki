@@ -13,10 +13,10 @@ import { blake2b } from "@noble/hashes/blake2.js";
  * This mirrors libsodium's crypto_box_seal exactly (the nonce is derived,
  * NOT all-zero), so GitHub's server can decrypt it.
  */
-export async function encryptGitHubSecret(
+export function encryptGitHubSecret(
   value: string,
   publicKey: string,
-): Promise<string> {
+): string {
   if (!value) {
     throw new Error("A GitHub Actions secret cannot be empty.");
   }

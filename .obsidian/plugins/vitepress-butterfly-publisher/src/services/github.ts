@@ -27,6 +27,17 @@ export interface GitHubRepository {
   readonly htmlUrl: string;
 }
 
+export interface GitHubWorkflowRun {
+  readonly id: number;
+  readonly name: string;
+  readonly path: string;
+  readonly status: string;
+  readonly conclusion: string | null;
+  readonly htmlUrl: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export class GitHubApiError extends Error {
   constructor(
     message: string,
@@ -61,6 +72,19 @@ interface GitHubRepositoryResponse {
   private: boolean;
   default_branch: string;
   html_url: string;
+}
+
+interface GitHubWorkflowRunsResponse {
+  workflow_runs?: Array<{
+    id: number;
+    name: string;
+    path: string;
+    status: string;
+    conclusion: string | null;
+    html_url: string;
+    created_at: string;
+    updated_at: string;
+  }>;
 }
 
 interface GitHubSecretPublicKeyResponse {
@@ -108,6 +132,35 @@ export class GitHubClient {
   async getRepository(repository: RepoRef): Promise<GitHubRepository> {
     const result = await this.request<GitHubRepositoryResponse>(this.repositoryPath(repository));
     return this.toRepository(result);
+  }
+
+  /**
+   * Lists workflow runs, optionally filtered to one workflow path (for
+   * example the Deploy Site workflow). The blog repository also runs a
+   * Setup Blog workflow, so path filtering is required to avoid treating
+   * unrelated CI runs as deployments.
+   */
+  async getWorkflowRuns(
+    repository: RepoRef,
+    options: { branch?: string; path?: string; perPage?: number } = {},
+  ): Promise<GitHubWorkflowRun[]> {
+    const result = await this.request<GitHubWorkflowRunsResponse>(
+      `${this.repositoryPath(repository)}/actions/runs`,
+      { query: { branch: options.branch, per_page: options.perPage } },
+    );
+    const runs = (result.workflow_runs ?? [])
+      .filter((run) => !options.path || run.path === options.path)
+      .map((run) => ({
+        id: run.id,
+        name: run.name,
+        path: run.path,
+        status: run.status,
+        conclusion: run.conclusion,
+        htmlUrl: run.html_url,
+        createdAt: run.created_at,
+        updatedAt: run.updated_at,
+      }));
+    return runs;
   }
 
   /** Force-updates an existing branch or creates it when the repository is empty. */
@@ -183,7 +236,7 @@ export class GitHubClient {
 
     await Promise.all(
       Object.entries(secrets).map(async ([name, value]) => {
-        const encryptedValue = await encryptGitHubSecret(value, key.key);
+        const encryptedValue = encryptGitHubSecret(value, key.key);
         await this.request<void>(
           `${this.repositoryPath(repository)}/actions/secrets/${encodeURIComponent(name)}`,
           {

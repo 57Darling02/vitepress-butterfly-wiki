@@ -1,7 +1,7 @@
 {
-  "name": "vitepress-butterfly-publisher",
-  "version": "0.8.6",
-  "description": "Publish the current Obsidian vault to a VitePress Butterfly blog.",
+  "name": "vitepress-butterfly",
+  "version": "0.9.0",
+  "description": "VitePress Butterfly console: one PAT to configure, write, publish and deploy a static blog from Obsidian.",
   "private": true,
   "main": "main.js",
   "scripts": {
@@ -10,12 +10,14 @@
   },
   "dependencies": {
     "@noble/hashes": "^2.2.0",
-    "tweetnacl": "^1.0.3"
+    "tweetnacl": "^1.0.3",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
     "esbuild": "^0.25.3",
     "obsidian": "^1.8.7",
     "typescript": "^5.8.3"
-  }
+  },
+  "packageManager": "pnpm@9.15.0"
 }
