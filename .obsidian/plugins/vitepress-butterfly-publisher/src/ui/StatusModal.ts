@@ -488,7 +488,9 @@ export class StatusModal extends Modal {
 		}
 		const rebuild = footer.createEl("button", {
 			text: snapshot.phase === "failure" ? "重试构建" : "重新构建",
-			cls: "mod-cta",
+			// Only failures deserve the prominent CTA; otherwise a plain button
+			// avoids accidental rebuilds.
+			cls: snapshot.phase === "failure" ? "mod-cta" : "",
 		});
 		rebuild.addEventListener("click", () => {
 			void this.rebuild();

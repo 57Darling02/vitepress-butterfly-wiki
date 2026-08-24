@@ -223,6 +223,7 @@ export class OverviewSection {
 		this.actionButton(buttons, "拉取", async () => {
 			const git = await this.readyGit();
 			await git.pull();
+			await this.deps.saveSettings({ lastGitSyncAt: Date.now() });
 			await this.refreshGitStatus();
 		});
 		this.actionButton(buttons, "提交并推送", async () => {
@@ -241,6 +242,7 @@ export class OverviewSection {
 
 			await git.commitAll(message);
 			await git.pushCurrent();
+			await this.deps.saveSettings({ lastGitSyncAt: Date.now() });
 			await this.deps.monitor.recordTrigger(`提交：${message}`);
 			await this.refreshGitStatus();
 			this.deps.onChanged();
@@ -290,14 +292,44 @@ export class OverviewSection {
 
 		try {
 			await git.ensureReady();
-			const [status, branch] = await Promise.all([git.status(), git.branchInfo()]);
+			const [status, branch, unpushed] = await Promise.all([
+				git.status(),
+				git.branchInfo(),
+				git.getUnpushedCommits().catch(() => 0),
+			]);
 			el.empty();
-			el.createEl("div", {
-				text: `分支：${branch.current || "未知"} · 后端：${git.backend} · 改动 ${status.changed.length} 项 · 冲突 ${status.conflicted.length} 项`,
-			});
-			if (status.all.length === 0) {
-				el.createEl("div", { text: "工作区是干净的，已和上次提交保持一致。", cls: "vpb-muted" });
+
+			// Prominent banner mirroring the status hero: conflict > changes >
+			// unpushed commits > clean.
+			const banner = el.createDiv({ cls: "vpb-git-banner" });
+			banner.createSpan({ cls: "vpb-status-dot" });
+			if (status.conflicted.length > 0) {
+				banner.addClass("is-conflict");
+				banner.createSpan({ text: `存在 ${status.conflicted.length} 项冲突，请先解决再提交` });
+			} else if (status.changed.length > 0) {
+				banner.addClass("is-changes");
+				banner.createSpan({ text: `有 ${status.changed.length} 项改动待提交` });
+			} else if (unpushed > 0) {
+				banner.addClass("is-unpushed");
+				banner.createSpan({ text: `有 ${unpushed} 个提交待推送` });
+			} else {
+				banner.addClass("is-clean");
+				banner.createSpan({ text: "已同步，工作区干净" });
 			}
+
+			const syncAt = this.deps.getSettings().lastGitSyncAt;
+			const syncText = syncAt
+				? ` · 上次同步 ${new Date(syncAt).toLocaleString("zh-CN", {
+					month: "2-digit",
+					day: "2-digit",
+					hour: "2-digit",
+					minute: "2-digit",
+				})}`
+				: "";
+			el.createEl("div", {
+				text: `分支：${branch.current || "未知"} · 后端：${git.backend}${syncText}`,
+				cls: "vpb-muted",
+			});
 		} catch (error) {
 			el.setText(`Git 状态读取失败：${error instanceof Error ? error.message : String(error)}`);
 		}

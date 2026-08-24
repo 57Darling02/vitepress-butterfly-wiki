@@ -325,7 +325,7 @@ export class SiteConfigModal extends Modal {
 		this.heading(container, "导航菜单");
 		container.createEl("p", {
 			cls: "vpb-config-hint",
-			text: "链接可使用 /FriendLink/ 这样的站内路径，或完整外链。每个导航项配置图标和文字。",
+			text: "导航栏显示一个顶层菜单入口（图标 + 文字），点击展开子菜单；子菜单项才是实际导航链接。",
 		});
 		this.menuItemsSetting(container, config.menuItems, (items) => {
 			config.menuItems = items;
@@ -718,28 +718,66 @@ export class SiteConfigModal extends Modal {
 		items: MenuItem[],
 		onChange: (items: MenuItem[]) => void,
 	): void {
-		const list = container.createDiv({ cls: "vpb-config-list" });
 		const notify = (): void => onChange([...items]);
 		const render = (): void => {
-			list.empty();
-			items.forEach((item, index) => {
-				const row = list.createDiv({ cls: "vpb-config-record" });
-				this.recordText(row, "名称", item.label, (value) => { item.label = value; notify(); });
-				this.recordText(row, "图标", item.icon ?? "", (value) => { item.icon = value || undefined; notify(); }, "compass 或 fa-brands fa-github");
-				this.recordText(row, "链接", item.link ?? "", (value) => { item.link = value || undefined; notify(); }, "/FriendLink/ 或 https://...");
-				this.rowButtons(row, index, items.length, () => {
-					items.splice(index, 1);
+			container.empty();
+
+			// Top level: exactly one menu container (icon + text, no link).
+			const topSection = this.listSection(
+				container,
+				"顶层菜单",
+				"最上层只能有一个菜单入口，不配置链接。",
+			);
+			if (items.length === 0) {
+				this.addListButton(topSection, "新增导航菜单", () => {
+					items.push(newMenuItem(items, true));
 					notify();
 					render();
-				}, () => { move(items, index, -1); notify(); render(); }, () => { move(items, index, 1); notify(); render(); });
+				});
+				return;
+			}
+
+			const item = items[0];
+			const topRow = topSection.createDiv({ cls: "vpb-config-record" });
+			this.recordText(topRow, "名称", item.label, (value) => { item.label = value; notify(); });
+			this.recordText(topRow, "图标", item.icon ?? "", (value) => { item.icon = value || undefined; notify(); }, "compass 或 fa-brands fa-github");
+			const topActions = topRow.createDiv({ cls: "vpb-record-actions" });
+			this.smallButton(topActions, "删除顶层菜单", "trash-2", () => {
+				items.splice(0, 1);
+				notify();
+				render();
+			}, false, true);
+
+			// Second level: the actual navigation links.
+			const children = (item.children ??= []);
+			const listSection = this.listSection(
+				container,
+				"子菜单项",
+				"点击顶层菜单后展开的导航链接，每项配置图标、文字和链接。",
+			);
+			const list = listSection.createDiv({ cls: "vpb-config-list" });
+			const renderChildren = (): void => {
+				list.empty();
+				children.forEach((child, index) => {
+					const row = list.createDiv({ cls: "vpb-config-record" });
+					this.recordText(row, "名称", child.label, (value) => { child.label = value; notify(); });
+					this.recordText(row, "图标", child.icon ?? "", (value) => { child.icon = value || undefined; notify(); }, "users 或 fa-brands fa-github");
+					this.recordText(row, "链接", child.link ?? "", (value) => { child.link = value || undefined; notify(); }, "/FriendLink/ 或 https://...");
+					this.rowButtons(row, index, children.length, () => {
+						children.splice(index, 1);
+						notify();
+						renderChildren();
+					}, () => { move(children, index, -1); notify(); renderChildren(); }, () => { move(children, index, 1); notify(); renderChildren(); });
+				});
+			};
+			renderChildren();
+			this.addListButton(listSection, "新增导航项", () => {
+				children.push(newMenuItem(children));
+				notify();
+				renderChildren();
 			});
 		};
 		render();
-		this.addListButton(container, "新增导航项", () => {
-			items.push(newMenuItem(items));
-			notify();
-			render();
-		});
 	}
 
 	private listSection(container: HTMLElement, name: string, desc: string, cls = ""): HTMLElement {
@@ -843,7 +881,7 @@ function move<T>(items: T[], from: number, direction: -1 | 1): void {
 	[items[from], items[to]] = [items[to], items[from]];
 }
 
-function newMenuItem(siblings: MenuItem[]): MenuItem {
+function newMenuItem(siblings: MenuItem[], isContainer = false): MenuItem {
 	const base = "menu";
 	const keys = new Set(siblings.map((item) => item.key));
 	let index = siblings.length + 1;
@@ -852,5 +890,7 @@ function newMenuItem(siblings: MenuItem[]): MenuItem {
 		index += 1;
 		key = `${base}-${index}`;
 	}
-	return { key, label: "新菜单", icon: "circle", link: "/" };
+	return isContainer
+		? { key, label: "新菜单", icon: "circle", children: [] }
+		: { key, label: "新导航", icon: "link", link: "/" };
 }

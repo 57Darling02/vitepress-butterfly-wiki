@@ -15,6 +15,7 @@ export interface MenuItem {
 	label: string;
 	icon?: string;
 	link?: string;
+	children?: MenuItem[];
 }
 
 export interface MusicPlayerConfig {
@@ -195,13 +196,7 @@ export class SiteConfigService {
 	}
 
 	async save(config: SiteConfig, expectedSource: string): Promise<SiteConfigSnapshot> {
-		// Navigation is single-level: strip any leftover children from older
-		// configs so they are removed from the YAML document on save.
-		const singleLevel: SiteConfig = {
-			...config,
-			menuItems: config.menuItems.map(({ key, label, icon, link }) => ({ key, label, icon, link })),
-		};
-		validateSiteConfig(singleLevel);
+		validateSiteConfig(config);
 
 		const adapter = this.app.vault.adapter;
 		const current = await adapter.exists(SITE_CONFIG_PATH)
@@ -221,12 +216,12 @@ export class SiteConfigService {
 		}
 		const existing = root;
 		for (const key of MANAGED_KEYS) {
-			updateKnownValue(document, [key], existing[key], singleLevel[key]);
+			updateKnownValue(document, [key], existing[key], config[key]);
 		}
 
 		const source = document.toString({ lineWidth: 0 });
 		await adapter.write(SITE_CONFIG_PATH, source);
-		return { config: clone(singleLevel), source };
+		return { config: clone(config), source };
 	}
 
 	async listPublicAssets(): Promise<string[]> {
@@ -338,11 +333,13 @@ function menuItems(value: unknown): MenuItem[] {
 
 function normalizeMenuItem(value: unknown, index: number): MenuItem {
 	const item = asRecord(value);
+	const children = menuItems(item.children);
 	return {
 		key: stringValue(item.key, `menu-${index + 1}`),
 		label: stringValue(item.label, "未命名菜单"),
 		icon: optionalString(item.icon),
 		link: optionalString(item.link),
+		children: children.length ? children : undefined,
 	};
 }
 
@@ -403,7 +400,11 @@ function validateSiteConfig(config: SiteConfig): void {
 	}
 }
 
-function validateMenuItems(items: MenuItem[], keys: Set<string>): void {
+function validateMenuItems(items: MenuItem[], keys: Set<string>, depth = 0): void {
+	// The top level is a single menu container; children hold the real links.
+	if (depth === 0 && items.length > 1) {
+		throw new Error("导航菜单最上层只能有一个菜单入口。");
+	}
 	for (const item of items) {
 		if (!item.key.trim() || !item.label.trim()) {
 			throw new Error("每个导航项都需要 key 和名称。");
@@ -412,6 +413,13 @@ function validateMenuItems(items: MenuItem[], keys: Set<string>): void {
 			throw new Error(`导航 key「${item.key}」重复。`);
 		}
 		keys.add(item.key);
+		if (item.children?.length) {
+			if (depth >= 1) {
+				throw new Error("导航菜单只支持两层：顶层菜单和子菜单项。");
+			}
+			validateMenuItems(item.children, keys, depth + 1);
+			continue;
+		}
 		if (!item.link) {
 			throw new Error(`导航「${item.label}」需要填写链接。`);
 		}
@@ -510,7 +518,7 @@ function sourceRecords(value: unknown[]): Record<string, unknown>[] {
 }
 
 function arrayIdentity(key: string, item: Record<string, unknown>): string {
-	if (key === "menuItems") {
+	if (key === "menuItems" || key === "children") {
 		return typeof item.key === "string" ? item.key : "";
 	}
 	if (key === "socialLinks") {

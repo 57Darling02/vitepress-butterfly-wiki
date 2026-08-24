@@ -96,6 +96,7 @@ export default class VitePressButterflyPublisher extends Plugin {
 			githubConnection: saved?.githubConnection ?? null,
 			initialization: saved?.initialization ?? null,
 			lastDeploy: saved?.lastDeploy ?? null,
+			lastGitSyncAt: saved?.lastGitSyncAt ?? null,
 		};
 	}
 

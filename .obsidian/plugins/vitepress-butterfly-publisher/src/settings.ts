@@ -52,6 +52,8 @@ export interface PluginSettings {
 	initialization: InitializationRecord | null;
 	/** Last known result for the tracked Deploy Site workflow. */
 	lastDeploy: DeploymentRecord | null;
+	/** Timestamp of the most recent pull / commit-and-push from the console. */
+	lastGitSyncAt: number | null;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -66,4 +68,5 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	githubConnection: null,
 	initialization: null,
 	lastDeploy: null,
+	lastGitSyncAt: null,
 };

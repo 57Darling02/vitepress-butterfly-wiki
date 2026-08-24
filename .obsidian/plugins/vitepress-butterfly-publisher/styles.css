@@ -786,6 +786,36 @@
   color: var(--vpb-muted-ink);
 }
 
+.vpb-git-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  color: var(--vpb-ink);
+}
+
+.vpb-git-banner .vpb-status-dot {
+  background: var(--text-muted);
+}
+
+.vpb-git-banner.is-conflict .vpb-status-dot {
+  background: var(--color-red);
+}
+
+.vpb-git-banner.is-changes .vpb-status-dot {
+  background: var(--color-orange);
+}
+
+.vpb-git-banner.is-unpushed .vpb-status-dot {
+  background: var(--color-blue);
+}
+
+.vpb-git-banner.is-clean .vpb-status-dot {
+  background: var(--color-green);
+}
+
 .vpb-log {
   white-space: pre-wrap;
   padding: 10px 12px;

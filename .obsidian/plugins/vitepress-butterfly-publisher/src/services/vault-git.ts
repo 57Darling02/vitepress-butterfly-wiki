@@ -28,6 +28,7 @@ interface ObsidianGitManager {
 	commitAll(options: { message: string }): Promise<unknown>;
 	pull(): Promise<unknown>;
 	push(): Promise<unknown>;
+	getUnpushedCommits(): Promise<number>;
 	fetch(remote?: string): Promise<unknown>;
 	checkout(branch: string, remote?: string): Promise<unknown>;
 	setRemote(remote: string, url: string): Promise<void>;
@@ -114,6 +115,10 @@ export class ObsidianGitVaultGit {
 
 	async pull(): Promise<void> {
 		await this.requireManager().pull();
+	}
+
+	async getUnpushedCommits(): Promise<number> {
+		return this.requireManager().getUnpushedCommits();
 	}
 
 	async fetch(remote: string): Promise<void> {

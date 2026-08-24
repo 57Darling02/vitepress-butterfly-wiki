@@ -3011,7 +3011,8 @@ var DEFAULT_SETTINGS = {
   vercelProjectId: "",
   githubConnection: null,
   initialization: null,
-  lastDeploy: null
+  lastDeploy: null,
+  lastGitSyncAt: null
 };
 
 // src/services/blog.ts
@@ -3327,6 +3328,9 @@ var ObsidianGitVaultGit = class _ObsidianGitVaultGit {
   }
   async pull() {
     await this.requireManager().pull();
+  }
+  async getUnpushedCommits() {
+    return this.requireManager().getUnpushedCommits();
   }
   async fetch(remote) {
     await this.requireManager().fetch(remote);
@@ -10522,11 +10526,7 @@ var SiteConfigService = class {
     return { config: this.parse(source), source };
   }
   async save(config, expectedSource) {
-    const singleLevel = {
-      ...config,
-      menuItems: config.menuItems.map(({ key, label, icon, link }) => ({ key, label, icon, link }))
-    };
-    validateSiteConfig(singleLevel);
+    validateSiteConfig(config);
     const adapter = this.app.vault.adapter;
     const current = await adapter.exists(SITE_CONFIG_PATH) ? await adapter.read(SITE_CONFIG_PATH) : "";
     if (current !== expectedSource) {
@@ -10542,11 +10542,11 @@ var SiteConfigService = class {
     }
     const existing = root;
     for (const key of MANAGED_KEYS) {
-      updateKnownValue(document, [key], existing[key], singleLevel[key]);
+      updateKnownValue(document, [key], existing[key], config[key]);
     }
     const source = document.toString({ lineWidth: 0 });
     await adapter.write(SITE_CONFIG_PATH, source);
-    return { config: clone(singleLevel), source };
+    return { config: clone(config), source };
   }
   async listPublicAssets() {
     const files = this.app.vault.getFiles();
@@ -10648,11 +10648,13 @@ function menuItems(value) {
 }
 function normalizeMenuItem(value, index) {
   const item = asRecord(value);
+  const children = menuItems(item.children);
   return {
     key: stringValue(item.key, `menu-${index + 1}`),
     label: stringValue(item.label, "\u672A\u547D\u540D\u83DC\u5355"),
     icon: optionalString(item.icon),
-    link: optionalString(item.link)
+    link: optionalString(item.link),
+    children: children.length ? children : void 0
   };
 }
 function friendLinks(value) {
@@ -10710,7 +10712,10 @@ function validateSiteConfig(config) {
     }
   }
 }
-function validateMenuItems(items, keys) {
+function validateMenuItems(items, keys, depth = 0) {
+  if (depth === 0 && items.length > 1) {
+    throw new Error("\u5BFC\u822A\u83DC\u5355\u6700\u4E0A\u5C42\u53EA\u80FD\u6709\u4E00\u4E2A\u83DC\u5355\u5165\u53E3\u3002");
+  }
   for (const item of items) {
     if (!item.key.trim() || !item.label.trim()) {
       throw new Error("\u6BCF\u4E2A\u5BFC\u822A\u9879\u90FD\u9700\u8981 key \u548C\u540D\u79F0\u3002");
@@ -10719,6 +10724,13 @@ function validateMenuItems(items, keys) {
       throw new Error(`\u5BFC\u822A key\u300C${item.key}\u300D\u91CD\u590D\u3002`);
     }
     keys.add(item.key);
+    if (item.children?.length) {
+      if (depth >= 1) {
+        throw new Error("\u5BFC\u822A\u83DC\u5355\u53EA\u652F\u6301\u4E24\u5C42\uFF1A\u9876\u5C42\u83DC\u5355\u548C\u5B50\u83DC\u5355\u9879\u3002");
+      }
+      validateMenuItems(item.children, keys, depth + 1);
+      continue;
+    }
     if (!item.link) {
       throw new Error(`\u5BFC\u822A\u300C${item.label}\u300D\u9700\u8981\u586B\u5199\u94FE\u63A5\u3002`);
     }
@@ -10795,7 +10807,7 @@ function sourceRecords(value) {
   return value.filter(isRecord);
 }
 function arrayIdentity(key, item) {
-  if (key === "menuItems") {
+  if (key === "menuItems" || key === "children") {
     return typeof item.key === "string" ? item.key : "";
   }
   if (key === "socialLinks") {
@@ -11097,7 +11109,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
     this.heading(container, "\u5BFC\u822A\u83DC\u5355");
     container.createEl("p", {
       cls: "vpb-config-hint",
-      text: "\u94FE\u63A5\u53EF\u4F7F\u7528 /FriendLink/ \u8FD9\u6837\u7684\u7AD9\u5185\u8DEF\u5F84\uFF0C\u6216\u5B8C\u6574\u5916\u94FE\u3002\u6BCF\u4E2A\u5BFC\u822A\u9879\u914D\u7F6E\u56FE\u6807\u548C\u6587\u5B57\u3002"
+      text: "\u5BFC\u822A\u680F\u663E\u793A\u4E00\u4E2A\u9876\u5C42\u83DC\u5355\u5165\u53E3\uFF08\u56FE\u6807 + \u6587\u5B57\uFF09\uFF0C\u70B9\u51FB\u5C55\u5F00\u5B50\u83DC\u5355\uFF1B\u5B50\u83DC\u5355\u9879\u624D\u662F\u5B9E\u9645\u5BFC\u822A\u94FE\u63A5\u3002"
     });
     this.menuItemsSetting(container, config.menuItems, (items) => {
       config.menuItems = items;
@@ -11416,45 +11428,84 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
     });
   }
   menuItemsSetting(container, items, onChange) {
-    const list = container.createDiv({ cls: "vpb-config-list" });
     const notify = () => onChange([...items]);
     const render = () => {
-      list.empty();
-      items.forEach((item, index) => {
-        const row = list.createDiv({ cls: "vpb-config-record" });
-        this.recordText(row, "\u540D\u79F0", item.label, (value) => {
-          item.label = value;
-          notify();
-        });
-        this.recordText(row, "\u56FE\u6807", item.icon ?? "", (value) => {
-          item.icon = value || void 0;
-          notify();
-        }, "compass \u6216 fa-brands fa-github");
-        this.recordText(row, "\u94FE\u63A5", item.link ?? "", (value) => {
-          item.link = value || void 0;
-          notify();
-        }, "/FriendLink/ \u6216 https://...");
-        this.rowButtons(row, index, items.length, () => {
-          items.splice(index, 1);
-          notify();
-          render();
-        }, () => {
-          move(items, index, -1);
-          notify();
-          render();
-        }, () => {
-          move(items, index, 1);
+      container.empty();
+      const topSection = this.listSection(
+        container,
+        "\u9876\u5C42\u83DC\u5355",
+        "\u6700\u4E0A\u5C42\u53EA\u80FD\u6709\u4E00\u4E2A\u83DC\u5355\u5165\u53E3\uFF0C\u4E0D\u914D\u7F6E\u94FE\u63A5\u3002"
+      );
+      if (items.length === 0) {
+        this.addListButton(topSection, "\u65B0\u589E\u5BFC\u822A\u83DC\u5355", () => {
+          items.push(newMenuItem(items, true));
           notify();
           render();
         });
+        return;
+      }
+      const item = items[0];
+      const topRow = topSection.createDiv({ cls: "vpb-config-record" });
+      this.recordText(topRow, "\u540D\u79F0", item.label, (value) => {
+        item.label = value;
+        notify();
+      });
+      this.recordText(topRow, "\u56FE\u6807", item.icon ?? "", (value) => {
+        item.icon = value || void 0;
+        notify();
+      }, "compass \u6216 fa-brands fa-github");
+      const topActions = topRow.createDiv({ cls: "vpb-record-actions" });
+      this.smallButton(topActions, "\u5220\u9664\u9876\u5C42\u83DC\u5355", "trash-2", () => {
+        items.splice(0, 1);
+        notify();
+        render();
+      }, false, true);
+      const children = item.children ??= [];
+      const listSection = this.listSection(
+        container,
+        "\u5B50\u83DC\u5355\u9879",
+        "\u70B9\u51FB\u9876\u5C42\u83DC\u5355\u540E\u5C55\u5F00\u7684\u5BFC\u822A\u94FE\u63A5\uFF0C\u6BCF\u9879\u914D\u7F6E\u56FE\u6807\u3001\u6587\u5B57\u548C\u94FE\u63A5\u3002"
+      );
+      const list = listSection.createDiv({ cls: "vpb-config-list" });
+      const renderChildren = () => {
+        list.empty();
+        children.forEach((child, index) => {
+          const row = list.createDiv({ cls: "vpb-config-record" });
+          this.recordText(row, "\u540D\u79F0", child.label, (value) => {
+            child.label = value;
+            notify();
+          });
+          this.recordText(row, "\u56FE\u6807", child.icon ?? "", (value) => {
+            child.icon = value || void 0;
+            notify();
+          }, "users \u6216 fa-brands fa-github");
+          this.recordText(row, "\u94FE\u63A5", child.link ?? "", (value) => {
+            child.link = value || void 0;
+            notify();
+          }, "/FriendLink/ \u6216 https://...");
+          this.rowButtons(row, index, children.length, () => {
+            children.splice(index, 1);
+            notify();
+            renderChildren();
+          }, () => {
+            move(children, index, -1);
+            notify();
+            renderChildren();
+          }, () => {
+            move(children, index, 1);
+            notify();
+            renderChildren();
+          });
+        });
+      };
+      renderChildren();
+      this.addListButton(listSection, "\u65B0\u589E\u5BFC\u822A\u9879", () => {
+        children.push(newMenuItem(children));
+        notify();
+        renderChildren();
       });
     };
     render();
-    this.addListButton(container, "\u65B0\u589E\u5BFC\u822A\u9879", () => {
-      items.push(newMenuItem(items));
-      notify();
-      render();
-    });
   }
   listSection(container, name, desc, cls = "") {
     const section = container.createDiv({ cls: `vpb-list-section ${cls}`.trim() });
@@ -11523,7 +11574,7 @@ function move(items, from, direction) {
   if (to < 0 || to >= items.length) return;
   [items[from], items[to]] = [items[to], items[from]];
 }
-function newMenuItem(siblings) {
+function newMenuItem(siblings, isContainer = false) {
   const base = "menu";
   const keys = new Set(siblings.map((item) => item.key));
   let index = siblings.length + 1;
@@ -11532,7 +11583,7 @@ function newMenuItem(siblings) {
     index += 1;
     key = `${base}-${index}`;
   }
-  return { key, label: "\u65B0\u83DC\u5355", icon: "circle", link: "/" };
+  return isContainer ? { key, label: "\u65B0\u83DC\u5355", icon: "circle", children: [] } : { key, label: "\u65B0\u5BFC\u822A", icon: "link", link: "/" };
 }
 
 // src/ui/StatusModal.ts
@@ -11951,7 +12002,9 @@ var StatusModal = class extends import_obsidian4.Modal {
     }
     const rebuild = footer.createEl("button", {
       text: snapshot.phase === "failure" ? "\u91CD\u8BD5\u6784\u5EFA" : "\u91CD\u65B0\u6784\u5EFA",
-      cls: "mod-cta"
+      // Only failures deserve the prominent CTA; otherwise a plain button
+      // avoids accidental rebuilds.
+      cls: snapshot.phase === "failure" ? "mod-cta" : ""
     });
     rebuild.addEventListener("click", () => {
       void this.rebuild();
@@ -12220,6 +12273,7 @@ var OverviewSection = class {
     this.actionButton(buttons, "\u62C9\u53D6", async () => {
       const git = await this.readyGit();
       await git.pull();
+      await this.deps.saveSettings({ lastGitSyncAt: Date.now() });
       await this.refreshGitStatus();
     });
     this.actionButton(buttons, "\u63D0\u4EA4\u5E76\u63A8\u9001", async () => {
@@ -12236,6 +12290,7 @@ var OverviewSection = class {
       }
       await git.commitAll(message);
       await git.pushCurrent();
+      await this.deps.saveSettings({ lastGitSyncAt: Date.now() });
       await this.deps.monitor.recordTrigger(`\u63D0\u4EA4\uFF1A${message}`);
       await this.refreshGitStatus();
       this.deps.onChanged();
@@ -12274,14 +12329,38 @@ var OverviewSection = class {
     }
     try {
       await git.ensureReady();
-      const [status, branch] = await Promise.all([git.status(), git.branchInfo()]);
+      const [status, branch, unpushed] = await Promise.all([
+        git.status(),
+        git.branchInfo(),
+        git.getUnpushedCommits().catch(() => 0)
+      ]);
       el.empty();
-      el.createEl("div", {
-        text: `\u5206\u652F\uFF1A${branch.current || "\u672A\u77E5"} \xB7 \u540E\u7AEF\uFF1A${git.backend} \xB7 \u6539\u52A8 ${status.changed.length} \u9879 \xB7 \u51B2\u7A81 ${status.conflicted.length} \u9879`
-      });
-      if (status.all.length === 0) {
-        el.createEl("div", { text: "\u5DE5\u4F5C\u533A\u662F\u5E72\u51C0\u7684\uFF0C\u5DF2\u548C\u4E0A\u6B21\u63D0\u4EA4\u4FDD\u6301\u4E00\u81F4\u3002", cls: "vpb-muted" });
+      const banner = el.createDiv({ cls: "vpb-git-banner" });
+      banner.createSpan({ cls: "vpb-status-dot" });
+      if (status.conflicted.length > 0) {
+        banner.addClass("is-conflict");
+        banner.createSpan({ text: `\u5B58\u5728 ${status.conflicted.length} \u9879\u51B2\u7A81\uFF0C\u8BF7\u5148\u89E3\u51B3\u518D\u63D0\u4EA4` });
+      } else if (status.changed.length > 0) {
+        banner.addClass("is-changes");
+        banner.createSpan({ text: `\u6709 ${status.changed.length} \u9879\u6539\u52A8\u5F85\u63D0\u4EA4` });
+      } else if (unpushed > 0) {
+        banner.addClass("is-unpushed");
+        banner.createSpan({ text: `\u6709 ${unpushed} \u4E2A\u63D0\u4EA4\u5F85\u63A8\u9001` });
+      } else {
+        banner.addClass("is-clean");
+        banner.createSpan({ text: "\u5DF2\u540C\u6B65\uFF0C\u5DE5\u4F5C\u533A\u5E72\u51C0" });
       }
+      const syncAt = this.deps.getSettings().lastGitSyncAt;
+      const syncText = syncAt ? ` \xB7 \u4E0A\u6B21\u540C\u6B65 ${new Date(syncAt).toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      })}` : "";
+      el.createEl("div", {
+        text: `\u5206\u652F\uFF1A${branch.current || "\u672A\u77E5"} \xB7 \u540E\u7AEF\uFF1A${git.backend}${syncText}`,
+        cls: "vpb-muted"
+      });
     } catch (error) {
       el.setText(`Git \u72B6\u6001\u8BFB\u53D6\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
     }
@@ -12585,7 +12664,8 @@ var VitePressButterflyPublisher = class extends import_obsidian7.Plugin {
       vercelProjectId: saved?.vercelProjectId ?? "",
       githubConnection: saved?.githubConnection ?? null,
       initialization: saved?.initialization ?? null,
-      lastDeploy: saved?.lastDeploy ?? null
+      lastDeploy: saved?.lastDeploy ?? null,
+      lastGitSyncAt: saved?.lastGitSyncAt ?? null
     };
   }
   async updateSettings(changes) {
