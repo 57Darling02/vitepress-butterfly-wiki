@@ -224,10 +224,10 @@ export class SiteConfigService {
 		return { config: clone(config), source };
 	}
 
-	async listPublicAssets(): Promise<string[]> {
+	async listPublicAssets(kind: "image" | "audio" = "image"): Promise<string[]> {
 		const files = this.app.vault.getFiles();
 		return files
-			.filter((file) => file.path.startsWith("public/") && isImage(file.path))
+			.filter((file) => file.path.startsWith("public/") && (kind === "image" ? isImage(file.path) : isAudio(file.path)))
 			.map((file) => `/${file.path.slice("public/".length)}`)
 			.sort((left, right) => left.localeCompare(right));
 	}
@@ -476,6 +476,10 @@ function isMenuLink(value: string): boolean {
 
 function isImage(path: string): boolean {
 	return /\.(avif|gif|jpe?g|png|svg|webp)$/i.test(path);
+}
+
+function isAudio(path: string): boolean {
+	return /\.(aac|flac|m4a|mp3|ogg|wav|webm)$/i.test(path);
 }
 
 function updateKnownValue(

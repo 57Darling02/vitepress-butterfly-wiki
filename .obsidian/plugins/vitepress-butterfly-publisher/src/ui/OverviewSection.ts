@@ -5,7 +5,7 @@ import type { BlogService } from "../services/blog";
 import { authenticatedGitHubUrl } from "../services/blog";
 import type { DeploymentMonitor, DeploymentSnapshot } from "../services/deployment";
 import type { PluginSettings } from "../settings";
-import { NewArticleModal } from "./NewArticleModal";
+import { NewArticleModal, type NewArticleInput } from "./NewArticleModal";
 import { SiteConfigModal } from "./SiteConfigModal";
 import { StatusModal, type StatusModalMode } from "./StatusModal";
 
@@ -15,7 +15,7 @@ export interface OverviewSectionDeps {
 	monitor: DeploymentMonitor;
 	getSettings(): PluginSettings;
 	saveSettings(changes: Partial<PluginSettings>): Promise<void>;
-	createArticle(title: string, directory: string): Promise<void>;
+	createArticle(input: NewArticleInput): Promise<void>;
 	/** Called after persisted state changed so the console re-renders. */
 	onChanged(): void;
 }
@@ -196,7 +196,7 @@ export class OverviewSection {
 
 		this.actionButton(buttons, "新建文章", async () => {
 			new NewArticleModal(this.deps.app, async (input) => {
-				await this.deps.createArticle(input.title, input.directory ?? "");
+				await this.deps.createArticle(input);
 			}).open();
 		});
 
@@ -281,7 +281,11 @@ export class OverviewSection {
 		return git;
 	}
 
-	private async refreshGitStatus(): Promise<void> {
+	/**
+	 * Refreshes the local Git status banner. Called on render, on demand, and
+	 * periodically by the console poll timer. All operations are local.
+	 */
+	async refreshGitStatus(): Promise<void> {
 		const el = this.gitStatusEl;
 		if (!el) return;
 		const git = this.deps.blog.getGitEngine();
@@ -484,9 +488,9 @@ class CommitMessageModal extends Modal {
 
 		new Setting(contentEl)
 			.setName("提交说明")
-			.setDesc("这段文字会作为 Git commit message。")
+			.setDesc("这段文字会作为 Git commit message；留空使用默认值。")
 			.addText((text) => {
-				text.setPlaceholder("例如：更新文章和站点配置");
+				text.setPlaceholder("Update blog content");
 				text.inputEl.addEventListener("input", () => {
 					this.message = text.getValue();
 				});

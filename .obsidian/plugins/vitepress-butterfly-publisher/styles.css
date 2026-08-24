@@ -286,6 +286,24 @@
   padding: 0 4px;
 }
 
+.vpb-advanced {
+  margin: 4px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--vpb-border);
+  border-radius: var(--vpb-radius);
+}
+
+.vpb-advanced summary {
+  cursor: pointer;
+  color: var(--vpb-muted-ink);
+  font-size: 13px;
+  user-select: none;
+}
+
+.vpb-advanced-body {
+  margin-top: 10px;
+}
+
 .vpb-modal h3 {
   margin: 0 0 8px;
   font-size: 16px;
@@ -536,6 +554,120 @@
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+/* Icon picker fields */
+.vpb-icon-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vpb-icon-preview {
+  min-width: 60px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--vpb-border);
+  border-radius: 6px;
+  background: var(--vpb-card);
+  color: var(--vpb-ink);
+  cursor: pointer;
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.vpb-icon-preview:hover {
+  border-color: var(--interactive-accent);
+}
+
+.vpb-icon-clear {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--vpb-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vpb-muted-ink);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.vpb-icon-clear:hover {
+  color: var(--color-red);
+}
+
+.vpb-icon-modal {
+  width: min(560px, 90vw);
+}
+
+.vpb-icon-modal input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+}
+
+.vpb-icon-custom {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.vpb-icon-custom input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.vpb-icon-grid {
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.vpb-icon-grid h5 {
+  margin: 10px 0 6px;
+  font-size: 12px;
+  color: var(--vpb-muted-ink);
+}
+
+.vpb-icon-grid-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 6px;
+}
+
+.vpb-icon-preview .vpb-fa-icon,
+.vpb-icon-item .vpb-fa-icon {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.vpb-icon-item {
+  height: 44px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--vpb-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vpb-ink);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.vpb-icon-item:hover {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
 }
 
 .vpb-list-add {

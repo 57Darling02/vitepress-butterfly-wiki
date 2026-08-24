@@ -4,6 +4,7 @@ import type { BlogService } from "../services/blog";
 import { DeploymentMonitor } from "../services/deployment";
 import type { PluginSettings } from "../settings";
 import { OverviewSection } from "./OverviewSection";
+import type { NewArticleInput } from "./NewArticleModal";
 
 export const CONSOLE_VIEW_TYPE = "vitepress-butterfly-console";
 
@@ -12,7 +13,7 @@ export interface ConsoleDeps {
 	blog: BlogService;
 	getSettings(): PluginSettings;
 	saveSettings(changes: Partial<PluginSettings>): Promise<void>;
-	createArticle(title: string, directory: string): Promise<void>;
+	createArticle(input: NewArticleInput): Promise<void>;
 }
 
 const DEPLOYMENT_POLL_INTERVAL = 20_000;
@@ -23,6 +24,7 @@ const DEPLOYMENT_POLL_INTERVAL = 20_000;
  */
 export class ConsoleView extends ItemView {
 	private monitor?: DeploymentMonitor;
+	private section?: OverviewSection;
 	private pollTimer?: number;
 
 	constructor(
@@ -70,7 +72,7 @@ export class ConsoleView extends ItemView {
 		header.createEl("p", { text: "写作、配置、发布与部署状态都在这里。", cls: "vpb-muted" });
 
 		const content = container.createDiv({ cls: "vpb-console-content" });
-		new OverviewSection({
+		this.section = new OverviewSection({
 			app: this.deps.app,
 			blog: this.deps.blog,
 			monitor: this.getMonitor(),
@@ -80,7 +82,8 @@ export class ConsoleView extends ItemView {
 			onChanged: () => {
 				void this.render();
 			},
-		}).render(content);
+		});
+		this.section.render(content);
 	}
 
 	// ------------------------------------------------------------------
@@ -106,6 +109,9 @@ export class ConsoleView extends ItemView {
 	}
 
 	private async pollDeployment(): Promise<void> {
+		// Local Git status refresh is cheap and runs on the same timer.
+		void this.section?.refreshGitStatus();
+
 		const previous = this.getMonitor().getSnapshot().phase;
 		const next = await this.getMonitor().refresh();
 		if (next.phase !== previous) {

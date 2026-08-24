@@ -3,7 +3,7 @@ import { Notice, Plugin, TFile } from "obsidian";
 import { DEFAULT_SETTINGS, PluginSettings } from "./settings";
 import { BlogService } from "./services/blog";
 import { ConsoleView, CONSOLE_VIEW_TYPE } from "./ui/ConsoleView";
-import { NewArticleModal } from "./ui/NewArticleModal";
+import { NewArticleModal, type NewArticleInput } from "./ui/NewArticleModal";
 import { SiteConfigModal } from "./ui/SiteConfigModal";
 
 export default class VitePressButterflyPublisher extends Plugin {
@@ -28,7 +28,7 @@ export default class VitePressButterflyPublisher extends Plugin {
 				blog: this.blog,
 				getSettings: () => this.settings,
 				saveSettings: (changes) => this.updateSettings(changes),
-				createArticle: (title, directory) => this.createArticle(title, directory),
+				createArticle: (input) => this.createArticle(input),
 			}),
 		);
 
@@ -50,7 +50,7 @@ export default class VitePressButterflyPublisher extends Plugin {
 			name: "新建博客文章",
 			callback: () => {
 				new NewArticleModal(this.app, async (input) => {
-					await this.createArticle(input.title, input.directory ?? "");
+					await this.createArticle(input);
 				}).open();
 			},
 		});
@@ -122,14 +122,14 @@ export default class VitePressButterflyPublisher extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	private async createArticle(title: string, directory: string): Promise<void> {
-		const safeTitle = title.trim();
+	private async createArticle(input: NewArticleInput): Promise<void> {
+		const safeTitle = input.title.trim();
 		const safeName = sanitizePathSegment(safeTitle);
 		if (!safeName) {
 			throw new Error("无法从标题生成文件名。");
 		}
 
-		const folder = directory
+		const folder = (input.directory ?? "")
 			.split("/")
 			.map(sanitizePathSegment)
 			.filter((segment) => segment && segment !== "." && segment !== "..")
@@ -141,21 +141,30 @@ export default class VitePressButterflyPublisher extends Plugin {
 
 		// JSON 字符串是合法的 YAML double-quoted scalar，标题中的冒号、
 		// 引号和井号不会破坏 frontmatter。
-		const frontmatter = [
+		const lines = [
 			"---",
 			`title: ${JSON.stringify(safeTitle)}`,
 			`date: ${new Date().toISOString().slice(0, 10)}`,
 			"layout: doc",
-			"---",
-			"",
-			`# ${safeTitle}`,
-			"",
-		].join("\n");
+		];
+		const author = input.author?.trim();
+		if (author) lines.push(`author: ${JSON.stringify(author)}`);
+		const cover = input.cover?.trim();
+		if (cover) lines.push(`cover: ${JSON.stringify(cover)}`);
+		if (input.tags?.length) {
+			lines.push("tags:");
+			for (const tag of input.tags) {
+				lines.push(`  - ${JSON.stringify(tag)}`);
+			}
+		}
+		const description = input.description?.trim();
+		if (description) lines.push(`description: ${JSON.stringify(description)}`);
+		lines.push("---", "", `# ${safeTitle}`, "");
 
 		if (folder) {
 			await this.app.vault.createFolder(folder).catch(() => undefined);
 		}
-		const file = await this.app.vault.create(path, frontmatter);
+		const file = await this.app.vault.create(path, lines.join("\n"));
 		this.app.workspace.getLeaf(false).openFile(file as TFile);
 	}
 
