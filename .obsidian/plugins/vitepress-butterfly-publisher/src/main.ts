@@ -19,6 +19,7 @@ export default class VitePressButterflyPublisher extends Plugin {
 				this.settings = { ...this.settings, ...changes };
 				await this.saveData(this.settings);
 			},
+			pluginVersion: this.manifest.version,
 		});
 
 		this.registerView(

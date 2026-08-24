@@ -151,6 +151,18 @@ export class OverviewSection {
 					void this.triggerRebuild();
 				});
 		});
+		menu.addItem((item) => {
+			item.setTitle("检查更新")
+				.setIcon("download")
+				.onClick(() => {
+					new UpdateModal(this.deps.app, {
+						blog: this.deps.blog,
+						monitor: this.deps.monitor,
+						blogRepo: this.deps.getSettings().blogRepoName.trim(),
+						onChanged: () => this.deps.onChanged(),
+					}).open();
+				});
+		});
 		const login = this.deps.getSettings().githubConnection?.login;
 		if (login) {
 			menu.addSeparator();
@@ -466,6 +478,163 @@ export class OverviewSection {
 		}
 	}
 }
+
+/**
+ * Unified update panel: checks plugin and blog theme updates in parallel,
+ * then offers per-item update actions.
+ */
+class UpdateModal extends Modal {
+	private checking = true;
+	private plugin: { latest: boolean; current: string; latestVersion: string } | null = null;
+	private theme: { latest: boolean; themeSha: string } | null = null;
+	private error: string | null = null;
+	private updating: "plugin" | "theme" | null = null;
+
+	constructor(
+		app: App,
+		private readonly deps: {
+			blog: BlogService;
+			monitor: DeploymentMonitor;
+			blogRepo: string;
+			onChanged(): void;
+		},
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.render();
+		void this.check();
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+
+	private async check(): Promise<void> {
+		this.checking = true;
+		this.error = null;
+		this.render();
+		try {
+			const [plugin, theme] = await Promise.all([
+				this.deps.blog.checkPluginUpdate(),
+				this.deps.blog.getThemeUpdateStatus(),
+			]);
+			this.plugin = plugin;
+			this.theme = theme;
+		} catch (error) {
+			this.error = error instanceof Error ? error.message : String(error);
+		} finally {
+			this.checking = false;
+			this.render();
+		}
+	}
+
+	private render(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("h3", { text: "检查更新" });
+
+		if (this.checking) {
+			const loading = contentEl.createDiv({ cls: "vpb-config-loading" });
+			const icon = loading.createSpan();
+			setIcon(icon, "loader-2");
+			loading.createSpan({ text: "正在检查插件与主题更新…" });
+			return;
+		}
+
+		if (this.error) {
+			contentEl.createEl("div", { text: this.error, cls: "vpb-modal-error" });
+			const footer = contentEl.createDiv({ cls: "modal-button-container" });
+			footer.createEl("button", { text: "重试" })
+				.addEventListener("click", () => {
+					void this.check();
+				});
+			footer.createEl("button", { text: "关闭" })
+				.addEventListener("click", () => this.close());
+			return;
+		}
+
+		// Plugin section
+		const pluginSection = contentEl.createDiv({ cls: "vpb-update-item" });
+		pluginSection.createEl("strong", { text: "插件" });
+		if (this.plugin?.latest) {
+			pluginSection.createEl("div", { text: `已是最新版本（v${this.plugin.current}）。`, cls: "vpb-update-ok" });
+		} else {
+			pluginSection.createEl("div", {
+				text: `检测到新版本：v${this.plugin?.current ?? "?"} → v${this.plugin?.latestVersion ?? "?"}（从模板仓库下载，本机设置不受影响）。`,
+				cls: "vpb-modal-hint",
+			});
+			const update = pluginSection.createEl("button", { text: "更新插件", cls: "mod-cta" });
+			update.addEventListener("click", () => {
+				void this.doUpdatePlugin(update);
+			});
+		}
+
+		// Theme section
+		const themeSection = contentEl.createDiv({ cls: "vpb-update-item" });
+		themeSection.createEl("strong", { text: "博客主题" });
+		if (this.theme?.latest) {
+			themeSection.createEl("div", { text: "已是最新版本。", cls: "vpb-update-ok" });
+		} else {
+			themeSection.createEl("div", {
+				text: `检测到主题新版本（${this.theme?.themeSha.slice(0, 7) ?? "?"}）。将以主题仓库最新代码更新博客仓库 ${this.deps.blogRepo}，博客仓库上的自定义修改会被覆盖。`,
+				cls: "vpb-modal-hint",
+			});
+			const update = themeSection.createEl("button", { text: "更新主题", cls: "mod-cta" });
+			update.addEventListener("click", () => {
+				void this.doUpdateTheme(update);
+			});
+		}
+
+		const footer = contentEl.createDiv({ cls: "modal-button-container" });
+		footer.createEl("button", { text: "关闭", cls: "mod-cta" })
+			.addEventListener("click", () => this.close());
+	}
+
+	private async doUpdatePlugin(button: HTMLButtonElement): Promise<void> {
+		if (this.updating) return;
+		this.updating = "plugin";
+		this.setPending(button);
+		try {
+			await this.deps.blog.updatePlugin();
+			new Notice("插件已更新，请重载插件（设置 → 第三方插件 → 关闭再启用）生效。", 8_000);
+			this.close();
+		} catch (error) {
+			this.error = error instanceof Error ? error.message : String(error);
+			this.render();
+		} finally {
+			this.updating = null;
+		}
+	}
+
+	private async doUpdateTheme(button: HTMLButtonElement): Promise<void> {
+		if (this.updating) return;
+		this.updating = "theme";
+		this.setPending(button);
+		try {
+			const result = await this.deps.blog.updateTheme();
+			await this.deps.monitor.recordTrigger(`更新主题（${result.themeSha.slice(0, 7)}）`);
+			this.deps.onChanged();
+			new Notice("主题已更新，博客正在重新构建。", 5_000);
+			this.close();
+		} catch (error) {
+			this.error = error instanceof Error ? error.message : String(error);
+			this.render();
+		} finally {
+			this.updating = null;
+		}
+	}
+
+	private setPending(button: HTMLButtonElement): void {
+		button.disabled = true;
+		button.classList.add("is-pending");
+		const loader = button.createSpan({ cls: "vpb-btn-loader" });
+		button.insertBefore(loader, button.firstChild);
+		setIcon(loader, "loader-2");
+	}
+}
+
 
 /**
  * Commit message dialog that resolves to `null` when cancelled, so closing

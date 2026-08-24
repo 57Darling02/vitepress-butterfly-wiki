@@ -27,6 +27,11 @@ export interface GitHubRepository {
   readonly htmlUrl: string;
 }
 
+export interface GitHubBranchHead {
+	readonly sha: string;
+	readonly treeSha: string;
+}
+
 export interface GitHubWorkflowRun {
   readonly id: number;
   readonly name: string;
@@ -161,6 +166,39 @@ export class GitHubClient {
         updatedAt: run.updated_at,
       }));
     return runs;
+  }
+
+  /** Latest commit of a branch, including its tree for theme updates. */
+  async getBranchHead(repository: RepoRef, branch: string): Promise<GitHubBranchHead> {
+    const result = await this.request<{ sha: string; commit: { tree: { sha: string } } }>(
+      `${this.repositoryPath(repository)}/commits/${encodeURIComponent(branch)}`,
+    );
+    return { sha: result.sha, treeSha: result.commit.tree.sha };
+  }
+
+  /** Creates a commit in a repository via the Git Data API. */
+  async createGitCommit(
+    repository: RepoRef,
+    options: { message: string; tree: string; parents: string[] },
+  ): Promise<{ sha: string }> {
+    return this.request<{ sha: string }>(
+      `${this.repositoryPath(repository)}/git/commits`,
+      {
+        method: "POST",
+        body: {
+          message: options.message,
+          tree: options.tree,
+          parents: options.parents,
+        },
+      },
+    );
+  }
+
+  /** Reads a file from the default branch; contents API returns base64. */
+  async getFileContent(repository: RepoRef, path: string): Promise<{ content: string; sha: string }> {
+    return this.request<{ content: string; sha: string }>(
+      `${this.repositoryPath(repository)}/contents/${encodeURIComponent(path)}`,
+    );
   }
 
   /** Force-updates an existing branch or creates it when the repository is empty. */

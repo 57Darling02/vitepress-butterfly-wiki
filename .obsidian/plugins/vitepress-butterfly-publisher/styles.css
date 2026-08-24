@@ -304,6 +304,31 @@
   margin-top: 10px;
 }
 
+.vpb-update-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--vpb-border);
+  border-radius: var(--vpb-radius);
+  background: var(--vpb-card);
+}
+
+.vpb-update-item strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.vpb-update-item .mod-cta {
+  align-self: flex-start;
+}
+
+.vpb-update-ok {
+  color: var(--color-green);
+  font-size: var(--font-ui-small);
+}
+
 .vpb-modal h3 {
   margin: 0 0 8px;
   font-size: 16px;

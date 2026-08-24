@@ -10,6 +10,14 @@ import { ObsidianGitVaultGit } from "./vault-git";
 import { ensureTemplateFiles } from "./template";
 import type { PluginSettings } from "../settings";
 
+const PLUGIN_DIR = ".obsidian/plugins/vitepress-butterfly-publisher";
+const PLUGIN_FILES = ["main.js", "manifest.json", "styles.css"];
+/** The plugin is distributed with the template repository, regardless of the user's article repo name. */
+const PLUGIN_SOURCE_REPO: GitHubRepositoryRef = {
+  owner: "57Darling02",
+  name: "vitepress-butterfly-wiki",
+};
+
 const BLOG_TEMPLATE: GitHubRepositoryRef = {
   owner: "57Darling02",
   name: "VitePress_butterfly",
@@ -21,6 +29,8 @@ export interface BlogServiceDeps {
   app: App;
   getSettings(): PluginSettings;
   saveSettings(changes: Partial<PluginSettings>): Promise<void>;
+  /** Current plugin version, used for self-update checks. */
+  pluginVersion: string;
 }
 
 export interface PatCheckResult {
@@ -140,6 +150,39 @@ export class BlogService {
   /** Existing article repository: overwrite its main branch and configure it. */
   async configureArticleRepository(): Promise<RepositoryConfigurationResult> {
     return this.syncArticleRepository();
+  }
+
+  /**
+   * Compares the local plugin version with the version in the article
+   * repository (the plugin's distribution source).
+   */
+  async checkPluginUpdate(): Promise<{ latest: boolean; current: string; latestVersion: string }> {
+    const settings = this.requirePat("更新插件");
+    const client = this.client();
+
+    const remote = await client.getFileContent(PLUGIN_SOURCE_REPO, `${PLUGIN_DIR}/manifest.json`);
+    const remoteVersion = parseManifestVersion(decodeBase64(remote.content));
+    return {
+      latest: remoteVersion === this.deps.pluginVersion,
+      current: this.deps.pluginVersion,
+      latestVersion: remoteVersion,
+    };
+  }
+
+  /**
+   * Downloads the plugin runtime files (main.js / manifest.json / styles.css)
+   * from the article repository and writes them into the plugin directory.
+   * data.json is never touched, so local settings survive.
+   */
+  async updatePlugin(): Promise<void> {
+    const settings = this.requirePat("更新插件");
+    const client = this.client();
+
+    for (const file of PLUGIN_FILES) {
+      const remote = await client.getFileContent(PLUGIN_SOURCE_REPO, `${PLUGIN_DIR}/${file}`);
+      const text = decodeBase64(remote.content);
+      await this.deps.app.vault.adapter.write(`${PLUGIN_DIR}/${file}`, text);
+    }
   }
 
   /**
@@ -439,6 +482,49 @@ export class BlogService {
   // ------------------------------------------------------------------
 
   /**
+   * Read-only check whether the blog repository is already at the latest
+   * theme commit, so the console can skip the confirmation dialog when
+   * there is nothing to update.
+   */
+  async getThemeUpdateStatus(): Promise<{ latest: boolean; themeSha: string }> {
+    const settings = this.requireConnectedRepositoryNames("更新主题");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "博客仓库") };
+
+    const themeHead = await client.getBranchHead(BLOG_TEMPLATE, DEFAULT_BRANCH);
+    const blogHead = await client.getBranchHead(blog, DEFAULT_BRANCH);
+    return { latest: themeHead.sha === blogHead.sha, themeSha: themeHead.sha };
+  }
+
+  /**
+   * Updates the blog repository to the latest theme commit: the theme's tree
+   * becomes a new commit on top of the blog's current main, so history stays
+   * linear. Blog-side customizations are replaced — callers must confirm.
+   * Returns updated=false when the blog is already at the latest theme.
+   */
+  async updateTheme(): Promise<{ themeSha: string; updated: boolean }> {
+    const settings = this.requireConnectedRepositoryNames("更新主题");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "博客仓库") };
+
+    const themeHead = await client.getBranchHead(BLOG_TEMPLATE, DEFAULT_BRANCH);
+    const blogHead = await client.getBranchHead(blog, DEFAULT_BRANCH);
+    if (themeHead.sha === blogHead.sha) {
+      return { themeSha: themeHead.sha, updated: false };
+    }
+
+    const commit = await client.createGitCommit(blog, {
+      message: `chore: 更新主题至 ${themeHead.sha.slice(0, 7)}`,
+      tree: themeHead.treeSha,
+      parents: [blogHead.sha],
+    });
+    await client.forceUpdateBranch(blog, DEFAULT_BRANCH, commit.sha);
+    return { themeSha: themeHead.sha, updated: true };
+  }
+
+  /**
    * Dispatches a rebuild to the blog repository and returns the trigger
    * timestamp so the console can match the resulting workflow run.
    */
@@ -733,6 +819,19 @@ export function authenticatedGitHubUrl(repository: GitHubRepositoryRef, pat: str
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
+}
+
+function decodeBase64(value: string): string {
+  return atob(value.replace(/\s+/g, ""));
+}
+
+function parseManifestVersion(source: string): string {
+  try {
+    const parsed = JSON.parse(source) as { version?: unknown };
+    return typeof parsed.version === "string" ? parsed.version : "";
+  } catch {
+    return "";
+  }
 }
 
 function wait(durationMs: number): Promise<void> {

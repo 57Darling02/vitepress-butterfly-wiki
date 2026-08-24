@@ -3089,6 +3089,33 @@ var GitHubClient = class {
     }));
     return runs;
   }
+  /** Latest commit of a branch, including its tree for theme updates. */
+  async getBranchHead(repository, branch) {
+    const result = await this.request(
+      `${this.repositoryPath(repository)}/commits/${encodeURIComponent(branch)}`
+    );
+    return { sha: result.sha, treeSha: result.commit.tree.sha };
+  }
+  /** Creates a commit in a repository via the Git Data API. */
+  async createGitCommit(repository, options) {
+    return this.request(
+      `${this.repositoryPath(repository)}/git/commits`,
+      {
+        method: "POST",
+        body: {
+          message: options.message,
+          tree: options.tree,
+          parents: options.parents
+        }
+      }
+    );
+  }
+  /** Reads a file from the default branch; contents API returns base64. */
+  async getFileContent(repository, path) {
+    return this.request(
+      `${this.repositoryPath(repository)}/contents/${encodeURIComponent(path)}`
+    );
+  }
   /** Force-updates an existing branch or creates it when the repository is empty. */
   async forceUpdateBranch(repository, branch, sha) {
     try {
@@ -3579,6 +3606,12 @@ async function ensureTemplateFiles(app) {
 }
 
 // src/services/blog.ts
+var PLUGIN_DIR = ".obsidian/plugins/vitepress-butterfly-publisher";
+var PLUGIN_FILES = ["main.js", "manifest.json", "styles.css"];
+var PLUGIN_SOURCE_REPO = {
+  owner: "57Darling02",
+  name: "vitepress-butterfly-wiki"
+};
 var BLOG_TEMPLATE = {
   owner: "57Darling02",
   name: "VitePress_butterfly"
@@ -3654,6 +3687,35 @@ var BlogService = class {
   /** Existing article repository: overwrite its main branch and configure it. */
   async configureArticleRepository() {
     return this.syncArticleRepository();
+  }
+  /**
+   * Compares the local plugin version with the version in the article
+   * repository (the plugin's distribution source).
+   */
+  async checkPluginUpdate() {
+    const settings = this.requirePat("\u66F4\u65B0\u63D2\u4EF6");
+    const client = this.client();
+    const remote = await client.getFileContent(PLUGIN_SOURCE_REPO, `${PLUGIN_DIR}/manifest.json`);
+    const remoteVersion = parseManifestVersion(decodeBase64(remote.content));
+    return {
+      latest: remoteVersion === this.deps.pluginVersion,
+      current: this.deps.pluginVersion,
+      latestVersion: remoteVersion
+    };
+  }
+  /**
+   * Downloads the plugin runtime files (main.js / manifest.json / styles.css)
+   * from the article repository and writes them into the plugin directory.
+   * data.json is never touched, so local settings survive.
+   */
+  async updatePlugin() {
+    const settings = this.requirePat("\u66F4\u65B0\u63D2\u4EF6");
+    const client = this.client();
+    for (const file of PLUGIN_FILES) {
+      const remote = await client.getFileContent(PLUGIN_SOURCE_REPO, `${PLUGIN_DIR}/${file}`);
+      const text = decodeBase64(remote.content);
+      await this.deps.app.vault.adapter.write(`${PLUGIN_DIR}/${file}`, text);
+    }
   }
   /**
    * Creates the template files (site_config.yml, public/, trigger workflow)
@@ -3901,6 +3963,44 @@ var BlogService = class {
   // Shared helpers.
   // ------------------------------------------------------------------
   /**
+   * Read-only check whether the blog repository is already at the latest
+   * theme commit, so the console can skip the confirmation dialog when
+   * there is nothing to update.
+   */
+  async getThemeUpdateStatus() {
+    const settings = this.requireConnectedRepositoryNames("\u66F4\u65B0\u4E3B\u9898");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "\u535A\u5BA2\u4ED3\u5E93") };
+    const themeHead = await client.getBranchHead(BLOG_TEMPLATE, DEFAULT_BRANCH);
+    const blogHead = await client.getBranchHead(blog, DEFAULT_BRANCH);
+    return { latest: themeHead.sha === blogHead.sha, themeSha: themeHead.sha };
+  }
+  /**
+   * Updates the blog repository to the latest theme commit: the theme's tree
+   * becomes a new commit on top of the blog's current main, so history stays
+   * linear. Blog-side customizations are replaced — callers must confirm.
+   * Returns updated=false when the blog is already at the latest theme.
+   */
+  async updateTheme() {
+    const settings = this.requireConnectedRepositoryNames("\u66F4\u65B0\u4E3B\u9898");
+    const client = this.client();
+    const user = await client.getAuthenticatedUser();
+    const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "\u535A\u5BA2\u4ED3\u5E93") };
+    const themeHead = await client.getBranchHead(BLOG_TEMPLATE, DEFAULT_BRANCH);
+    const blogHead = await client.getBranchHead(blog, DEFAULT_BRANCH);
+    if (themeHead.sha === blogHead.sha) {
+      return { themeSha: themeHead.sha, updated: false };
+    }
+    const commit = await client.createGitCommit(blog, {
+      message: `chore: \u66F4\u65B0\u4E3B\u9898\u81F3 ${themeHead.sha.slice(0, 7)}`,
+      tree: themeHead.treeSha,
+      parents: [blogHead.sha]
+    });
+    await client.forceUpdateBranch(blog, DEFAULT_BRANCH, commit.sha);
+    return { themeSha: themeHead.sha, updated: true };
+  }
+  /**
    * Dispatches a rebuild to the blog repository and returns the trigger
    * timestamp so the console can match the resulting workflow run.
    */
@@ -4129,6 +4229,17 @@ function authenticatedGitHubUrl(repository, pat) {
 }
 function errorMessage(error) {
   return error instanceof Error && error.message ? error.message : String(error);
+}
+function decodeBase64(value) {
+  return atob(value.replace(/\s+/g, ""));
+}
+function parseManifestVersion(source) {
+  try {
+    const parsed = JSON.parse(source);
+    return typeof parsed.version === "string" ? parsed.version : "";
+  } catch {
+    return "";
+  }
 }
 function wait(durationMs) {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
@@ -12727,6 +12838,16 @@ var OverviewSection = class {
         void this.triggerRebuild();
       });
     });
+    menu.addItem((item) => {
+      item.setTitle("\u68C0\u67E5\u66F4\u65B0").setIcon("download").onClick(() => {
+        new UpdateModal(this.deps.app, {
+          blog: this.deps.blog,
+          monitor: this.deps.monitor,
+          blogRepo: this.deps.getSettings().blogRepoName.trim(),
+          onChanged: () => this.deps.onChanged()
+        }).open();
+      });
+    });
     const login = this.deps.getSettings().githubConnection?.login;
     if (login) {
       menu.addSeparator();
@@ -12983,6 +13104,132 @@ var OverviewSection = class {
     }
   }
 };
+var UpdateModal = class extends import_obsidian6.Modal {
+  constructor(app, deps) {
+    super(app);
+    this.deps = deps;
+    this.checking = true;
+    this.plugin = null;
+    this.theme = null;
+    this.error = null;
+    this.updating = null;
+  }
+  onOpen() {
+    this.render();
+    void this.check();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+  async check() {
+    this.checking = true;
+    this.error = null;
+    this.render();
+    try {
+      const [plugin, theme] = await Promise.all([
+        this.deps.blog.checkPluginUpdate(),
+        this.deps.blog.getThemeUpdateStatus()
+      ]);
+      this.plugin = plugin;
+      this.theme = theme;
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.checking = false;
+      this.render();
+    }
+  }
+  render() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: "\u68C0\u67E5\u66F4\u65B0" });
+    if (this.checking) {
+      const loading = contentEl.createDiv({ cls: "vpb-config-loading" });
+      const icon = loading.createSpan();
+      (0, import_obsidian6.setIcon)(icon, "loader-2");
+      loading.createSpan({ text: "\u6B63\u5728\u68C0\u67E5\u63D2\u4EF6\u4E0E\u4E3B\u9898\u66F4\u65B0\u2026" });
+      return;
+    }
+    if (this.error) {
+      contentEl.createEl("div", { text: this.error, cls: "vpb-modal-error" });
+      const footer2 = contentEl.createDiv({ cls: "modal-button-container" });
+      footer2.createEl("button", { text: "\u91CD\u8BD5" }).addEventListener("click", () => {
+        void this.check();
+      });
+      footer2.createEl("button", { text: "\u5173\u95ED" }).addEventListener("click", () => this.close());
+      return;
+    }
+    const pluginSection = contentEl.createDiv({ cls: "vpb-update-item" });
+    pluginSection.createEl("strong", { text: "\u63D2\u4EF6" });
+    if (this.plugin?.latest) {
+      pluginSection.createEl("div", { text: `\u5DF2\u662F\u6700\u65B0\u7248\u672C\uFF08v${this.plugin.current}\uFF09\u3002`, cls: "vpb-update-ok" });
+    } else {
+      pluginSection.createEl("div", {
+        text: `\u68C0\u6D4B\u5230\u65B0\u7248\u672C\uFF1Av${this.plugin?.current ?? "?"} \u2192 v${this.plugin?.latestVersion ?? "?"}\uFF08\u4ECE\u6A21\u677F\u4ED3\u5E93\u4E0B\u8F7D\uFF0C\u672C\u673A\u8BBE\u7F6E\u4E0D\u53D7\u5F71\u54CD\uFF09\u3002`,
+        cls: "vpb-modal-hint"
+      });
+      const update = pluginSection.createEl("button", { text: "\u66F4\u65B0\u63D2\u4EF6", cls: "mod-cta" });
+      update.addEventListener("click", () => {
+        void this.doUpdatePlugin(update);
+      });
+    }
+    const themeSection = contentEl.createDiv({ cls: "vpb-update-item" });
+    themeSection.createEl("strong", { text: "\u535A\u5BA2\u4E3B\u9898" });
+    if (this.theme?.latest) {
+      themeSection.createEl("div", { text: "\u5DF2\u662F\u6700\u65B0\u7248\u672C\u3002", cls: "vpb-update-ok" });
+    } else {
+      themeSection.createEl("div", {
+        text: `\u68C0\u6D4B\u5230\u4E3B\u9898\u65B0\u7248\u672C\uFF08${this.theme?.themeSha.slice(0, 7) ?? "?"}\uFF09\u3002\u5C06\u4EE5\u4E3B\u9898\u4ED3\u5E93\u6700\u65B0\u4EE3\u7801\u66F4\u65B0\u535A\u5BA2\u4ED3\u5E93 ${this.deps.blogRepo}\uFF0C\u535A\u5BA2\u4ED3\u5E93\u4E0A\u7684\u81EA\u5B9A\u4E49\u4FEE\u6539\u4F1A\u88AB\u8986\u76D6\u3002`,
+        cls: "vpb-modal-hint"
+      });
+      const update = themeSection.createEl("button", { text: "\u66F4\u65B0\u4E3B\u9898", cls: "mod-cta" });
+      update.addEventListener("click", () => {
+        void this.doUpdateTheme(update);
+      });
+    }
+    const footer = contentEl.createDiv({ cls: "modal-button-container" });
+    footer.createEl("button", { text: "\u5173\u95ED", cls: "mod-cta" }).addEventListener("click", () => this.close());
+  }
+  async doUpdatePlugin(button) {
+    if (this.updating) return;
+    this.updating = "plugin";
+    this.setPending(button);
+    try {
+      await this.deps.blog.updatePlugin();
+      new import_obsidian6.Notice("\u63D2\u4EF6\u5DF2\u66F4\u65B0\uFF0C\u8BF7\u91CD\u8F7D\u63D2\u4EF6\uFF08\u8BBE\u7F6E \u2192 \u7B2C\u4E09\u65B9\u63D2\u4EF6 \u2192 \u5173\u95ED\u518D\u542F\u7528\uFF09\u751F\u6548\u3002", 8e3);
+      this.close();
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error);
+      this.render();
+    } finally {
+      this.updating = null;
+    }
+  }
+  async doUpdateTheme(button) {
+    if (this.updating) return;
+    this.updating = "theme";
+    this.setPending(button);
+    try {
+      const result = await this.deps.blog.updateTheme();
+      await this.deps.monitor.recordTrigger(`\u66F4\u65B0\u4E3B\u9898\uFF08${result.themeSha.slice(0, 7)}\uFF09`);
+      this.deps.onChanged();
+      new import_obsidian6.Notice("\u4E3B\u9898\u5DF2\u66F4\u65B0\uFF0C\u535A\u5BA2\u6B63\u5728\u91CD\u65B0\u6784\u5EFA\u3002", 5e3);
+      this.close();
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error);
+      this.render();
+    } finally {
+      this.updating = null;
+    }
+  }
+  setPending(button) {
+    button.disabled = true;
+    button.classList.add("is-pending");
+    const loader = button.createSpan({ cls: "vpb-btn-loader" });
+    button.insertBefore(loader, button.firstChild);
+    (0, import_obsidian6.setIcon)(loader, "loader-2");
+  }
+};
 var CommitMessageModal = class extends import_obsidian6.Modal {
   constructor() {
     super(...arguments);
@@ -13115,7 +13362,8 @@ var VitePressButterflyPublisher = class extends import_obsidian8.Plugin {
       saveSettings: async (changes) => {
         this.settings = { ...this.settings, ...changes };
         await this.saveData(this.settings);
-      }
+      },
+      pluginVersion: this.manifest.version
     });
     this.registerView(
       CONSOLE_VIEW_TYPE,
