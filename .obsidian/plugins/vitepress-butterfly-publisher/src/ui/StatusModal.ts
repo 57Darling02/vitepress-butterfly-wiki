@@ -398,6 +398,9 @@ export class StatusModal extends Modal {
 			switch (index) {
 				case 0:
 					if (!record.articleReady) {
+						// Fresh vaults lack the template files; create them before
+						// the local commit so they are uploaded with the vault.
+						await this.deps.blog.ensureTemplateFiles();
 						const check = await this.deps.blog.checkArticleRepository();
 						if (check.exists) {
 							if (this.articleSync === "overwrite") {

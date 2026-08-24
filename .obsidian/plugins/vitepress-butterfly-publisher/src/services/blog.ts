@@ -7,6 +7,7 @@ import {
   GitHubWorkflowRun,
 } from "./github";
 import { ObsidianGitVaultGit } from "./vault-git";
+import { ensureTemplateFiles } from "./template";
 import type { PluginSettings } from "../settings";
 
 const BLOG_TEMPLATE: GitHubRepositoryRef = {
@@ -139,6 +140,14 @@ export class BlogService {
   /** Existing article repository: overwrite its main branch and configure it. */
   async configureArticleRepository(): Promise<RepositoryConfigurationResult> {
     return this.syncArticleRepository();
+  }
+
+  /**
+   * Creates the template files (site_config.yml, public/, trigger workflow)
+   * so a fresh vault can publish without the template repository. Idempotent.
+   */
+  async ensureTemplateFiles(): Promise<string[]> {
+    return ensureTemplateFiles(this.deps.app);
   }
 
   /**

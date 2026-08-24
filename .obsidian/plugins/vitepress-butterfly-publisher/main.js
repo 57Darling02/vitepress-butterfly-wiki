@@ -2997,7 +2997,7 @@ __export(main_exports, {
   default: () => VitePressButterflyPublisher
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 
 // src/settings.ts
 var DEFAULT_SETTINGS = {
@@ -3016,7 +3016,7 @@ var DEFAULT_SETTINGS = {
 };
 
 // src/services/blog.ts
-var import_obsidian = require("obsidian");
+var import_obsidian2 = require("obsidian");
 
 // src/services/github.ts
 var API_URL = "https://api.github.com";
@@ -3397,6 +3397,187 @@ var ObsidianGitVaultGit = class _ObsidianGitVaultGit {
   }
 };
 
+// src/services/template.ts
+var import_obsidian = require("obsidian");
+var SITE_CONFIG_PATH = "site_config.yml";
+var PUBLIC_DIR = "public";
+var TRIGGER_WORKFLOW_PATH = ".github/workflows/trigger.yml";
+var TRIGGER_WORKFLOW_YAML = `# Place this workflow in your content/wiki repository (not the blog repo).
+name: Trigger Blog Rebuild
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check blog repository is ready
+        id: check
+        env:
+          PAT: \${{ secrets.PAT }}
+          BLOG_REPO: \${{ secrets.BLOG_REPO }}
+        run: |
+          if [ -z "$PAT" ] || [ -z "$BLOG_REPO" ]; then
+            echo "::notice::\u5C1A\u672A\u5B8C\u6210\u535A\u5BA2\u914D\u7F6E\uFF0C\u672C\u6B21\u63A8\u9001\u4E0D\u89E6\u53D1\u6784\u5EFA\u3002"
+            exit 0
+          fi
+
+          if [[ ! "$BLOG_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "::warning::BLOG_REPO \u683C\u5F0F\u65E0\u6548\uFF0C\u672C\u6B21\u63A8\u9001\u4E0D\u89E6\u53D1\u6784\u5EFA\u3002"
+            exit 0
+          fi
+
+          status="$(curl --silent --show-error --connect-timeout 5 --max-time 15 \\
+            --output /dev/null --write-out '%{http_code}' \\
+            --header 'Accept: application/vnd.github+json' \\
+            --header "Authorization: Bearer $PAT" \\
+            --header 'X-GitHub-Api-Version: 2022-11-28' \\
+            "https://api.github.com/repos/$BLOG_REPO" || true)"
+          if [ "$status" != "200" ]; then
+            if [ "$status" = "404" ]; then
+              echo "::notice::\u535A\u5BA2\u4ED3\u5E93\u5C1A\u672A\u5C31\u7EEA\uFF0C\u672C\u6B21\u63A8\u9001\u4E0D\u89E6\u53D1\u6784\u5EFA\u3002"
+            else
+              echo "::warning::\u65E0\u6CD5\u9A8C\u8BC1\u535A\u5BA2\u4ED3\u5E93\uFF08HTTP \${status:-network error}\uFF09\uFF0C\u8BF7\u68C0\u67E5 PAT \u6743\u9650\u6216\u7F51\u7EDC\u3002"
+            fi
+            exit 0
+          fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch event to blog repo
+        if: steps.check.outputs.ready == 'true'
+        env:
+          PAT: \${{ secrets.PAT }}
+          BLOG_REPO: \${{ secrets.BLOG_REPO }}
+        run: |
+          status="$(curl --silent --show-error --connect-timeout 5 --max-time 15 \\
+            --output /dev/null --write-out '%{http_code}' \\
+            --request POST \\
+            --header 'Accept: application/vnd.github+json' \\
+            --header "Authorization: Bearer $PAT" \\
+            --header 'Content-Type: application/json' \\
+            --header 'X-GitHub-Api-Version: 2022-11-28' \\
+            --data '{"event_type":"contents-updated"}' \\
+            "https://api.github.com/repos/$BLOG_REPO/dispatches" || true)"
+
+          if [ "$status" != "204" ]; then
+            echo "::error::\u89E6\u53D1\u535A\u5BA2\u91CD\u5EFA\u5931\u8D25\uFF08HTTP \${status:-network error}\uFF09\uFF0C\u8BF7\u68C0\u67E5 PAT \u6743\u9650\u6216\u7F51\u7EDC\u3002"
+            exit 1
+          fi
+`;
+function defaultSiteConfigYaml(siteName) {
+  const safeName = JSON.stringify(siteName);
+  return `# Site information
+site_name: ${safeName}
+site_description: "\u8FD9\u662F\u4E00\u4E2A\u4F7F\u7528 VitePress \u6784\u5EFA\u7684\u535A\u5BA2\u7AD9\u70B9\u3002"
+site_url: ""
+lang: "zh-CN"
+author: ""
+
+# Visual experience
+# Leave background empty for the built-in adaptive gradient, or use a HEX color or public asset path.
+background: ""
+bg_rainfall: false
+
+# Home page
+home:
+  mainTitle: ${safeName}
+  subTitles:
+    - "\u5199 Markdown"
+    - "\u63A8\u9001\u6587\u7AE0"
+    - "\u81EA\u52A8\u4E0A\u7EBF"
+
+# Post list
+# sortMethod: "date" or "lastUpdated".
+pageSize: 8
+sortMethod: "date"
+
+# Last updated display
+lastUpdated:
+  use: true
+
+# Profile card
+avatar: ""
+name: ""
+signature: ""
+introduction: ""
+socialLinks: []
+
+# Navbar menu
+# link uses site paths such as "/FriendLink/" or external URLs such as "https://example.com".
+menuItems: []
+
+# Navigation music player
+# volume range: 0 ~ 1.
+musicPlayer:
+  enabled: false
+  url: ""
+  name: ""
+  artist: ""
+  cover: ""
+  autoplay: false
+  volume: 0.6
+
+# Friend links page
+friendlink: []
+
+# Footer
+footer:
+  message: "Hello World!"
+  copyright: "Powered by VitePress-Butterfly"
+  createdTime: ""
+
+# Comments powered by giscus.
+# Fill these values from https://giscus.app.
+comments:
+  enabled: false
+  host: "https://giscus.app"
+  repo: ""
+  repoId: ""
+  category: "Announcements"
+  categoryId: ""
+  mapping: "title"
+  strict: "0"
+  reactionsEnabled: "1"
+  emitMetadata: "0"
+  inputPosition: "top"
+  theme: "preferred_color_scheme"
+  lang: "zh-CN"
+  loading: "lazy"
+`;
+}
+async function ensureTemplateFiles(app) {
+  const vault = app.vault;
+  const created = [];
+  if (!vault.getAbstractFileByPath(SITE_CONFIG_PATH)) {
+    const siteName = vault.getName().trim() || "My Blog";
+    await vault.create(SITE_CONFIG_PATH, defaultSiteConfigYaml(siteName));
+    created.push(SITE_CONFIG_PATH);
+  }
+  if (!(vault.getAbstractFileByPath(PUBLIC_DIR) instanceof import_obsidian.TFolder)) {
+    await vault.createFolder(PUBLIC_DIR).catch(() => void 0);
+  }
+  if (!vault.getAbstractFileByPath(`${PUBLIC_DIR}/.gitkeep`)) {
+    await vault.create(`${PUBLIC_DIR}/.gitkeep`, "");
+    created.push(`${PUBLIC_DIR}/.gitkeep`);
+  }
+  const workflowDir = ".github/workflows";
+  if (!vault.getAbstractFileByPath(workflowDir)) {
+    await vault.createFolder(workflowDir).catch(() => void 0);
+  }
+  if (!vault.getAbstractFileByPath(TRIGGER_WORKFLOW_PATH)) {
+    await vault.create(TRIGGER_WORKFLOW_PATH, TRIGGER_WORKFLOW_YAML);
+    created.push(TRIGGER_WORKFLOW_PATH);
+  }
+  if (created.length > 0) {
+    new import_obsidian.Notice(`\u5DF2\u521B\u5EFA\u6A21\u677F\u6587\u4EF6\uFF1A${created.join("\u3001")}`, 6e3);
+  }
+  return created;
+}
+
 // src/services/blog.ts
 var BLOG_TEMPLATE = {
   owner: "57Darling02",
@@ -3473,6 +3654,13 @@ var BlogService = class {
   /** Existing article repository: overwrite its main branch and configure it. */
   async configureArticleRepository() {
     return this.syncArticleRepository();
+  }
+  /**
+   * Creates the template files (site_config.yml, public/, trigger workflow)
+   * so a fresh vault can publish without the template repository. Idempotent.
+   */
+  async ensureTemplateFiles() {
+    return ensureTemplateFiles(this.deps.app);
   }
   /**
    * Reports whether the local article repository already has commit history.
@@ -3833,7 +4021,7 @@ var BlogService = class {
     try {
       await git.reload();
     } catch {
-      new import_obsidian.Notice("\u6587\u7AE0\u5DF2\u4E0A\u4F20\uFF1Bobsidian-git \u5237\u65B0\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u542F Obsidian\u3002", 8e3);
+      new import_obsidian2.Notice("\u6587\u7AE0\u5DF2\u4E0A\u4F20\uFF1Bobsidian-git \u5237\u65B0\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u542F Obsidian\u3002", 8e3);
     }
   }
   /**
@@ -3947,7 +4135,7 @@ function wait(durationMs) {
 }
 
 // src/ui/ConsoleView.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 
 // src/services/deployment.ts
 var DEPLOY_WORKFLOW_PATH2 = ".github/workflows/deploy.yml";
@@ -4106,11 +4294,11 @@ var DeploymentMonitor = class {
 };
 
 // src/ui/OverviewSection.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 
 // src/ui/NewArticleModal.ts
-var import_obsidian2 = require("obsidian");
-var NewArticleModal = class extends import_obsidian2.Modal {
+var import_obsidian3 = require("obsidian");
+var NewArticleModal = class extends import_obsidian3.Modal {
   constructor(app, onSubmit) {
     super(app);
     this.onSubmit = onSubmit;
@@ -4139,14 +4327,14 @@ var NewArticleModal = class extends import_obsidian2.Modal {
       void this.submit();
     });
     let titleInput;
-    new import_obsidian2.Setting(formEl).setName("\u6807\u9898").setDesc("\u6587\u7AE0\u6587\u4EF6\u540D\u5C06\u7531\u6807\u9898\u751F\u6210\u3002").addText((text) => {
+    new import_obsidian3.Setting(formEl).setName("\u6807\u9898").setDesc("\u6587\u7AE0\u6587\u4EF6\u540D\u5C06\u7531\u6807\u9898\u751F\u6210\u3002").addText((text) => {
       text.setPlaceholder("\u8F93\u5165\u6587\u7AE0\u6807\u9898");
       text.onChange((value) => {
         this.title = value;
       });
       titleInput = text.inputEl;
     });
-    new import_obsidian2.Setting(formEl).setName("\u76EE\u5F55").setDesc("\u9009\u62E9\u6587\u7AE0\u6240\u5728\u6587\u4EF6\u5939\uFF1B\u7559\u7A7A\u4E3A Vault \u6839\u76EE\u5F55\u3002").addDropdown((dropdown) => {
+    new import_obsidian3.Setting(formEl).setName("\u76EE\u5F55").setDesc("\u9009\u62E9\u6587\u7AE0\u6240\u5728\u6587\u4EF6\u5939\uFF1B\u7559\u7A7A\u4E3A Vault \u6839\u76EE\u5F55\u3002").addDropdown((dropdown) => {
       dropdown.addOption("", "Vault \u6839\u76EE\u5F55");
       for (const folder of listContentFolders(this.app)) {
         dropdown.addOption(folder, folder);
@@ -4158,12 +4346,12 @@ var NewArticleModal = class extends import_obsidian2.Modal {
     const advanced = formEl.createEl("details", { cls: "vpb-advanced" });
     advanced.createEl("summary", { text: "\u9AD8\u7EA7\u8BBE\u7F6E\uFF08\u53EF\u9009\uFF09" });
     const box = advanced.createDiv({ cls: "vpb-advanced-body" });
-    new import_obsidian2.Setting(box).setName("\u4F5C\u8005").setDesc("\u7559\u7A7A\u5219\u4F7F\u7528\u7AD9\u70B9\u9ED8\u8BA4\u4F5C\u8005\u3002").addText((text) => {
+    new import_obsidian3.Setting(box).setName("\u4F5C\u8005").setDesc("\u7559\u7A7A\u5219\u4F7F\u7528\u7AD9\u70B9\u9ED8\u8BA4\u4F5C\u8005\u3002").addText((text) => {
       text.onChange((value) => {
         this.author = value;
       });
     });
-    const coverSetting = new import_obsidian2.Setting(box).setName("\u5C01\u9762").setDesc("\u53EF\u9009\u62E9 public/ \u4E2D\u7684\u56FE\u7247\uFF0C\u6216\u586B\u5199\u5916\u94FE\u5730\u5740\u3002").addText((text) => {
+    const coverSetting = new import_obsidian3.Setting(box).setName("\u5C01\u9762").setDesc("\u53EF\u9009\u62E9 public/ \u4E2D\u7684\u56FE\u7247\uFF0C\u6216\u586B\u5199\u5916\u94FE\u5730\u5740\u3002").addText((text) => {
       text.setPlaceholder("/image/cover.webp \u6216 https://...");
       text.onChange((value) => {
         this.cover = value;
@@ -4179,13 +4367,13 @@ var NewArticleModal = class extends import_obsidian2.Modal {
         });
       });
     });
-    new import_obsidian2.Setting(box).setName("\u6807\u7B7E").setDesc("\u591A\u4E2A\u6807\u7B7E\u7528\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982\uFF1A\u65E5\u8BB0, \u751F\u6D3B\u3002").addText((text) => {
+    new import_obsidian3.Setting(box).setName("\u6807\u7B7E").setDesc("\u591A\u4E2A\u6807\u7B7E\u7528\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982\uFF1A\u65E5\u8BB0, \u751F\u6D3B\u3002").addText((text) => {
       text.setPlaceholder("\u6807\u7B7E1, \u6807\u7B7E2");
       text.onChange((value) => {
         this.tagsText = value;
       });
     });
-    new import_obsidian2.Setting(box).setName("\u63CF\u8FF0").setDesc("\u7528\u4E8E SEO \u6458\u8981\uFF1B\u7559\u7A7A\u5219\u4ECE\u6B63\u6587\u81EA\u52A8\u622A\u53D6\u3002").addTextArea((text) => {
+    new import_obsidian3.Setting(box).setName("\u63CF\u8FF0").setDesc("\u7528\u4E8E SEO \u6458\u8981\uFF1B\u7559\u7A7A\u5219\u4ECE\u6B63\u6587\u81EA\u52A8\u622A\u53D6\u3002").addTextArea((text) => {
       text.inputEl.rows = 3;
       text.onChange((value) => {
         this.description = value;
@@ -4207,7 +4395,7 @@ var NewArticleModal = class extends import_obsidian2.Modal {
   async choosePublicImage(onChoose) {
     const images = this.app.vault.getFiles().filter((file) => file.path.startsWith("public/") && /\.(avif|gif|jpe?g|png|svg|webp)$/i.test(file.path)).map((file) => `/${file.path.slice("public/".length)}`).sort((left, right) => left.localeCompare(right));
     if (images.length === 0) {
-      new import_obsidian2.Notice("public/ \u76EE\u5F55\u4E2D\u6CA1\u6709\u53EF\u9009\u56FE\u7247\u3002", 5e3);
+      new import_obsidian3.Notice("public/ \u76EE\u5F55\u4E2D\u6CA1\u6709\u53EF\u9009\u56FE\u7247\u3002", 5e3);
       return;
     }
     new PublicImageSuggestModal(this.app, images, onChoose).open();
@@ -4218,7 +4406,7 @@ var NewArticleModal = class extends import_obsidian2.Modal {
     }
     const title = this.title.trim();
     if (!title) {
-      new import_obsidian2.Notice("\u8BF7\u8F93\u5165\u6587\u7AE0\u6807\u9898");
+      new import_obsidian3.Notice("\u8BF7\u8F93\u5165\u6587\u7AE0\u6807\u9898");
       return;
     }
     this.isSubmitting = true;
@@ -4237,16 +4425,16 @@ var NewArticleModal = class extends import_obsidian2.Modal {
       await this.onSubmit(input);
       this.close();
     } catch (error) {
-      new import_obsidian2.Notice(error instanceof Error && error.message ? error.message : "\u521B\u5EFA\u6587\u7AE0\u5931\u8D25");
+      new import_obsidian3.Notice(error instanceof Error && error.message ? error.message : "\u521B\u5EFA\u6587\u7AE0\u5931\u8D25");
     } finally {
       this.isSubmitting = false;
     }
   }
 };
 function listContentFolders(app) {
-  return app.vault.getAllLoadedFiles().filter((file) => file instanceof import_obsidian2.TFolder).map((folder) => folder.path).filter((path) => !path.split("/").some((segment) => segment.startsWith(".") || segment === "node_modules")).sort((left, right) => left.localeCompare(right));
+  return app.vault.getAllLoadedFiles().filter((file) => file instanceof import_obsidian3.TFolder).map((folder) => folder.path).filter((path) => !path.split("/").some((segment) => segment.startsWith(".") || segment === "node_modules")).sort((left, right) => left.localeCompare(right));
 }
-var PublicImageSuggestModal = class extends import_obsidian2.FuzzySuggestModal {
+var PublicImageSuggestModal = class extends import_obsidian3.FuzzySuggestModal {
   constructor(app, images, onChoose) {
     super(app);
     this.images = images;
@@ -4265,7 +4453,7 @@ var PublicImageSuggestModal = class extends import_obsidian2.FuzzySuggestModal {
 };
 
 // src/ui/SiteConfigModal.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // node_modules/.pnpm/yaml@2.9.0/node_modules/yaml/browser/dist/nodes/identity.js
 var ALIAS = Symbol.for("yaml.alias");
@@ -10516,7 +10704,7 @@ function parseDocument(source, options = {}) {
 }
 
 // src/services/site-config.ts
-var SITE_CONFIG_PATH = "site_config.yml";
+var SITE_CONFIG_PATH2 = "site_config.yml";
 var SiteConfigConflictError = class extends Error {
   constructor() {
     super("site_config.yml \u5DF2\u88AB\u5176\u4ED6\u7F16\u8F91\u5668\u4FEE\u6539\u3002\u8BF7\u5173\u95ED\u914D\u7F6E\u7A97\u53E3\u540E\u91CD\u65B0\u6253\u5F00\uFF0C\u907F\u514D\u8986\u76D6\u5916\u90E8\u6539\u52A8\u3002");
@@ -10607,13 +10795,13 @@ var SiteConfigService = class {
   }
   async load() {
     const adapter = this.app.vault.adapter;
-    const source = await adapter.exists(SITE_CONFIG_PATH) ? await adapter.read(SITE_CONFIG_PATH) : "";
+    const source = await adapter.exists(SITE_CONFIG_PATH2) ? await adapter.read(SITE_CONFIG_PATH2) : "";
     return { config: this.parse(source), source };
   }
   async save(config, expectedSource) {
     validateSiteConfig(config);
     const adapter = this.app.vault.adapter;
-    const current = await adapter.exists(SITE_CONFIG_PATH) ? await adapter.read(SITE_CONFIG_PATH) : "";
+    const current = await adapter.exists(SITE_CONFIG_PATH2) ? await adapter.read(SITE_CONFIG_PATH2) : "";
     if (current !== expectedSource) {
       throw new SiteConfigConflictError();
     }
@@ -10630,7 +10818,7 @@ var SiteConfigService = class {
       updateKnownValue(document, [key], existing[key], config[key]);
     }
     const source = document.toString({ lineWidth: 0 });
-    await adapter.write(SITE_CONFIG_PATH, source);
+    await adapter.write(SITE_CONFIG_PATH2, source);
     return { config: clone(config), source };
   }
   async listPublicAssets(kind = "image") {
@@ -11063,7 +11251,7 @@ function renderFaIcon(parent, icon) {
   const svg = parent.createSvg("svg", { cls: "vpb-fa-icon", attr: { viewBox: brand.viewBox } });
   svg.createSvg("path", { attr: { d: brand.path, fill: "currentColor" } });
 }
-var SiteConfigModal = class extends import_obsidian3.Modal {
+var SiteConfigModal = class extends import_obsidian4.Modal {
   constructor(app, onSaved) {
     super(app);
     this.onSaved = onSaved;
@@ -11105,7 +11293,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
     if (this.loading) {
       const loading = this.contentEl.createDiv({ cls: "vpb-config-loading" });
       const icon = loading.createSpan();
-      (0, import_obsidian3.setIcon)(icon, "loader-2");
+      (0, import_obsidian4.setIcon)(icon, "loader-2");
       loading.createSpan({ text: "\u6B63\u5728\u8BFB\u53D6\u7AD9\u70B9\u914D\u7F6E\u2026" });
       return;
     }
@@ -11147,7 +11335,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
       cls: "vpb-icon-button",
       attr: { "aria-label": "\u6253\u5F00\u539F\u59CB YAML" }
     });
-    (0, import_obsidian3.setIcon)(raw, "file-code-2");
+    (0, import_obsidian4.setIcon)(raw, "file-code-2");
     raw.addEventListener("click", () => {
       void this.openRawConfig();
     });
@@ -11159,7 +11347,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
         cls: `vpb-config-tab${tab.id === this.activeTab ? " is-active" : ""}`,
         attr: { "aria-label": tab.label }
       });
-      (0, import_obsidian3.setIcon)(button, tab.icon);
+      (0, import_obsidian4.setIcon)(button, tab.icon);
       button.createSpan({ text: tab.label });
       button.addEventListener("click", () => {
         if (this.activeTab === tab.id) return;
@@ -11198,13 +11386,13 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
     button.classList.add("is-pending");
     const loader = button.createSpan({ cls: "vpb-btn-loader" });
     button.insertBefore(loader, button.firstChild);
-    (0, import_obsidian3.setIcon)(loader, "loader-2");
+    (0, import_obsidian4.setIcon)(loader, "loader-2");
     try {
       const snapshot = await this.service.save(this.config, this.source);
       this.source = snapshot.source;
       this.error = null;
       this.onSaved();
-      new import_obsidian3.Notice("\u7AD9\u70B9\u914D\u7F6E\u5DF2\u4FDD\u5B58\u3002", 4e3);
+      new import_obsidian4.Notice("\u7AD9\u70B9\u914D\u7F6E\u5DF2\u4FDD\u5B58\u3002", 4e3);
       this.close();
     } catch (error) {
       this.error = errorText(error);
@@ -11217,7 +11405,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
   async openRawConfig() {
     const file = this.app.vault.getFileByPath("site_config.yml");
     if (!file) {
-      new import_obsidian3.Notice("\u8BF7\u5148\u4FDD\u5B58\u4E00\u6B21\u7AD9\u70B9\u914D\u7F6E\u4EE5\u521B\u5EFA site_config.yml\u3002", 6e3);
+      new import_obsidian4.Notice("\u8BF7\u5148\u4FDD\u5B58\u4E00\u6B21\u7AD9\u70B9\u914D\u7F6E\u4EE5\u521B\u5EFA site_config.yml\u3002", 6e3);
       return;
     }
     await this.app.workspace.getLeaf(false).openFile(file);
@@ -11426,21 +11614,21 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
     container.createEl("h4", { text, cls: "vpb-config-heading" });
   }
   textSetting(container, name, desc, value, onChange, placeholder = "") {
-    new import_obsidian3.Setting(container).setName(name).setDesc(desc).addText((text) => {
+    new import_obsidian4.Setting(container).setName(name).setDesc(desc).addText((text) => {
       text.setValue(value);
       if (placeholder) text.setPlaceholder(placeholder);
       text.onChange(onChange);
     });
   }
   textAreaSetting(container, name, desc, value, onChange) {
-    new import_obsidian3.Setting(container).setName(name).setDesc(desc).addTextArea((text) => {
+    new import_obsidian4.Setting(container).setName(name).setDesc(desc).addTextArea((text) => {
       text.setValue(value);
       text.inputEl.rows = 3;
       text.onChange(onChange);
     });
   }
   numberSetting(container, name, desc, value, minimum, maximum, onChange) {
-    new import_obsidian3.Setting(container).setName(name).setDesc(desc).addText((text) => {
+    new import_obsidian4.Setting(container).setName(name).setDesc(desc).addText((text) => {
       text.inputEl.type = "number";
       text.inputEl.min = String(minimum);
       text.inputEl.max = String(maximum);
@@ -11454,20 +11642,20 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
     });
   }
   toggleSetting(container, name, desc, value, onChange) {
-    new import_obsidian3.Setting(container).setName(name).setDesc(desc).addToggle((toggle) => {
+    new import_obsidian4.Setting(container).setName(name).setDesc(desc).addToggle((toggle) => {
       toggle.setValue(value);
       toggle.onChange(onChange);
     });
   }
   dropdownSetting(container, name, desc, value, options, onChange) {
-    new import_obsidian3.Setting(container).setName(name).setDesc(desc).addDropdown((dropdown) => {
+    new import_obsidian4.Setting(container).setName(name).setDesc(desc).addDropdown((dropdown) => {
       dropdown.addOptions(options);
       dropdown.setValue(value in options ? value : Object.keys(options)[0]);
       dropdown.onChange(onChange);
     });
   }
   segmentedSetting(container, name, desc, value, options, onChange) {
-    const setting = new import_obsidian3.Setting(container).setName(name).setDesc(desc);
+    const setting = new import_obsidian4.Setting(container).setName(name).setDesc(desc);
     const segment = setting.controlEl.createDiv({ cls: "vpb-segmented" });
     for (const option of options) {
       const button = segment.createEl("button", {
@@ -11483,7 +11671,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
     }
   }
   sliderSetting(container, name, desc, value, onChange) {
-    new import_obsidian3.Setting(container).setName(name).setDesc(desc).addSlider((slider) => {
+    new import_obsidian4.Setting(container).setName(name).setDesc(desc).addSlider((slider) => {
       slider.setLimits(0, 1, 0.1);
       slider.setDisplayFormat((next) => `${Math.round(next * 100)}%`);
       slider.setValue(value);
@@ -11491,7 +11679,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
     });
   }
   assetSetting(container, name, desc, value, onChange, allowColor = false, kind = "image") {
-    const setting = new import_obsidian3.Setting(container).setName(name).setDesc(desc).addText((text) => {
+    const setting = new import_obsidian4.Setting(container).setName(name).setDesc(desc).addText((text) => {
       text.setValue(value);
       text.setPlaceholder(kind === "image" ? allowColor ? "#1e293b \u6216 /image/background.webp" : "/image/avatar.png" : "/music/song.mp3");
       text.onChange(onChange);
@@ -11736,7 +11924,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
       attr: { "aria-label": label }
     });
     button.disabled = disabled;
-    (0, import_obsidian3.setIcon)(button, icon);
+    (0, import_obsidian4.setIcon)(button, icon);
     button.addEventListener("click", onClick);
   }
   recordIcon(container, label, value, onChange) {
@@ -11754,7 +11942,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
       } else if (value.startsWith("fa-")) {
         renderFaIcon(preview, value);
       } else {
-        (0, import_obsidian3.setIcon)(preview, value);
+        (0, import_obsidian4.setIcon)(preview, value);
       }
     };
     render();
@@ -11769,7 +11957,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
       cls: "vpb-icon-clear",
       attr: { "aria-label": "\u6E05\u9664\u56FE\u6807" }
     });
-    (0, import_obsidian3.setIcon)(clear, "trash-2");
+    (0, import_obsidian4.setIcon)(clear, "trash-2");
     clear.addEventListener("click", () => {
       value = "";
       onChange("");
@@ -11789,7 +11977,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
   async chooseAsset(kind, onChoose) {
     const assets = await this.service.listPublicAssets(kind);
     if (assets.length === 0) {
-      new import_obsidian3.Notice(kind === "image" ? "public/ \u76EE\u5F55\u4E2D\u6CA1\u6709\u53EF\u9009\u56FE\u7247\u3002" : "public/ \u76EE\u5F55\u4E2D\u6CA1\u6709\u53EF\u9009\u97F3\u9891\u3002", 5e3);
+      new import_obsidian4.Notice(kind === "image" ? "public/ \u76EE\u5F55\u4E2D\u6CA1\u6709\u53EF\u9009\u56FE\u7247\u3002" : "public/ \u76EE\u5F55\u4E2D\u6CA1\u6709\u53EF\u9009\u97F3\u9891\u3002", 5e3);
       return;
     }
     new AssetSuggestModal(this.app, assets, onChoose).open();
@@ -11799,7 +11987,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
     return this.config;
   }
 };
-var AssetSuggestModal = class extends import_obsidian3.FuzzySuggestModal {
+var AssetSuggestModal = class extends import_obsidian4.FuzzySuggestModal {
   constructor(app, assets, onChoose) {
     super(app);
     this.assets = assets;
@@ -11816,7 +12004,7 @@ var AssetSuggestModal = class extends import_obsidian3.FuzzySuggestModal {
     this.onChoose(item);
   }
 };
-var IconSuggestModal = class extends import_obsidian3.Modal {
+var IconSuggestModal = class extends import_obsidian4.Modal {
   constructor(app, onChoose) {
     super(app);
     this.onChoose = onChoose;
@@ -11868,7 +12056,7 @@ var IconSuggestModal = class extends import_obsidian3.Modal {
         if (icon.startsWith("fa-")) {
           renderFaIcon(button, icon);
         } else {
-          (0, import_obsidian3.setIcon)(button, icon);
+          (0, import_obsidian4.setIcon)(button, icon);
         }
         button.addEventListener("click", () => {
           this.onChoose(icon);
@@ -11911,7 +12099,7 @@ function collectMenuKeys(items) {
 }
 
 // src/ui/StatusModal.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 var INIT_STEPS = [
   "\u6587\u7AE0\u4ED3\u5E93\uFF1A\u521B\u5EFA\u6216\u8FDE\u63A5\uFF0C\u5199\u5165 BLOG_REPO \u4E0E PAT",
   "\u535A\u5BA2\u4ED3\u5E93\uFF1A\u4ECE\u6A21\u677F\u521B\u5EFA\u6216\u4EC5\u66F4\u65B0\u53D8\u91CF",
@@ -11921,7 +12109,7 @@ var INIT_STEPS = [
 function errorText2(error) {
   return error instanceof Error && error.message ? error.message : String(error);
 }
-var StatusModal = class extends import_obsidian4.Modal {
+var StatusModal = class extends import_obsidian5.Modal {
   constructor(deps, mode) {
     super(deps.app);
     this.deps = deps;
@@ -11973,7 +12161,7 @@ var StatusModal = class extends import_obsidian4.Modal {
       text: "\u4F7F\u7528\u5177\u6709 repo + workflow \u6743\u9650\u7684 Tokens (classic)\u3002PAT \u53EA\u4FDD\u5B58\u5728\u672C\u673A\u8BBE\u7F6E\u548C GitHub \u52A0\u5BC6 secrets \u4E2D\u3002"
     });
     let patInput;
-    new import_obsidian4.Setting(this.contentEl).setName("GitHub PAT").addText((text) => {
+    new import_obsidian5.Setting(this.contentEl).setName("GitHub PAT").addText((text) => {
       patInput = text.inputEl;
       text.inputEl.type = "password";
       text.inputEl.autocomplete = "off";
@@ -12047,14 +12235,14 @@ var StatusModal = class extends import_obsidian4.Modal {
     const settings = this.deps.getSettings();
     this.articleInputValue = settings.repoName;
     this.blogInputValue = settings.blogRepoName;
-    new import_obsidian4.Setting(this.contentEl).setName("\u6587\u7AE0\u4ED3\u5E93").setDesc("\u4FDD\u5B58\u6587\u7AE0\u548C\u7AD9\u70B9\u914D\u7F6E\u7684\u79C1\u5BC6\u4ED3\u5E93\u3002").addText((text) => {
+    new import_obsidian5.Setting(this.contentEl).setName("\u6587\u7AE0\u4ED3\u5E93").setDesc("\u4FDD\u5B58\u6587\u7AE0\u548C\u7AD9\u70B9\u914D\u7F6E\u7684\u79C1\u5BC6\u4ED3\u5E93\u3002").addText((text) => {
       text.setPlaceholder("my-blog-wiki");
       text.setValue(this.articleInputValue);
       text.onChange((value) => {
         this.articleInputValue = value.trim();
       });
     });
-    new import_obsidian4.Setting(this.contentEl).setName("\u535A\u5BA2\u4ED3\u5E93").setDesc("\u516C\u5F00\u7684\u535A\u5BA2\u4E3B\u9898\u4ED3\u5E93\uFF1B\u4E0D\u5B58\u5728\u65F6\u4ECE\u5B98\u65B9\u6A21\u677F\u521B\u5EFA\u3002").addText((text) => {
+    new import_obsidian5.Setting(this.contentEl).setName("\u535A\u5BA2\u4ED3\u5E93").setDesc("\u516C\u5F00\u7684\u535A\u5BA2\u4E3B\u9898\u4ED3\u5E93\uFF1B\u4E0D\u5B58\u5728\u65F6\u4ECE\u5B98\u65B9\u6A21\u677F\u521B\u5EFA\u3002").addText((text) => {
       text.setPlaceholder("yourname.github.io");
       text.setValue(this.blogInputValue);
       text.onChange((value) => {
@@ -12179,12 +12367,12 @@ var StatusModal = class extends import_obsidian4.Modal {
       const current = index === this.stepIndex;
       if (done) {
         item.addClass("is-done");
-        (0, import_obsidian4.setIcon)(item.createSpan({ cls: "vpb-step-icon" }), "check");
+        (0, import_obsidian5.setIcon)(item.createSpan({ cls: "vpb-step-icon" }), "check");
       } else if (current) {
         item.addClass("is-current");
-        (0, import_obsidian4.setIcon)(item.createSpan({ cls: "vpb-step-icon" }), "loader-2");
+        (0, import_obsidian5.setIcon)(item.createSpan({ cls: "vpb-step-icon" }), "loader-2");
       } else {
-        (0, import_obsidian4.setIcon)(item.createSpan({ cls: "vpb-step-icon" }), "circle");
+        (0, import_obsidian5.setIcon)(item.createSpan({ cls: "vpb-step-icon" }), "circle");
       }
       item.createEl("span", { text: label });
     });
@@ -12240,6 +12428,7 @@ var StatusModal = class extends import_obsidian4.Modal {
       switch (index) {
         case 0:
           if (!record.articleReady) {
+            await this.deps.blog.ensureTemplateFiles();
             const check = await this.deps.blog.checkArticleRepository();
             if (check.exists) {
               if (this.articleSync === "overwrite") {
@@ -12389,7 +12578,7 @@ var StatusModal = class extends import_obsidian4.Modal {
       { key: "vercelProjectId", name: "Vercel Project ID", placeholder: "prj_xxx" }
     ];
     for (const field of fields) {
-      new import_obsidian4.Setting(this.contentEl).setName(field.name).addText((text) => {
+      new import_obsidian5.Setting(this.contentEl).setName(field.name).addText((text) => {
         text.inputEl.type = "password";
         text.inputEl.autocomplete = "off";
         text.inputEl.spellcheck = false;
@@ -12397,7 +12586,7 @@ var StatusModal = class extends import_obsidian4.Modal {
         text.setValue(this.deps.getSettings()[field.key]);
         text.onChange((value) => {
           void this.deps.saveSettings({ [field.key]: value.trim() }).catch((error) => {
-            new import_obsidian4.Notice(errorText2(error));
+            new import_obsidian5.Notice(errorText2(error));
           });
         });
       });
@@ -12523,7 +12712,7 @@ var OverviewSection = class {
     ).open();
   }
   openMoreMenu(event) {
-    const menu = new import_obsidian5.Menu();
+    const menu = new import_obsidian6.Menu();
     menu.addItem((item) => {
       item.setTitle("\u91CD\u65B0\u8FDE\u63A5 GitHub").setIcon("plug").onClick(() => this.openStatusModal("connect"));
     });
@@ -12559,11 +12748,11 @@ var OverviewSection = class {
     try {
       const triggeredAt = await this.deps.blog.triggerDeploy();
       await this.deps.monitor.recordTrigger("\u624B\u52A8\u89E6\u53D1\u6784\u5EFA", triggeredAt);
-      new import_obsidian5.Notice("\u5DF2\u89E6\u53D1\u535A\u5BA2\u91CD\u65B0\u6784\u5EFA\u3002", 4e3);
+      new import_obsidian6.Notice("\u5DF2\u89E6\u53D1\u535A\u5BA2\u91CD\u65B0\u6784\u5EFA\u3002", 4e3);
       this.deps.onChanged();
       void this.deps.monitor.refresh();
     } catch (error) {
-      new import_obsidian5.Notice(`\u89E6\u53D1\u6784\u5EFA\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`, 8e3);
+      new import_obsidian6.Notice(`\u89E6\u53D1\u6784\u5EFA\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`, 8e3);
     }
   }
   // ------------------------------------------------------------------
@@ -12731,7 +12920,7 @@ var OverviewSection = class {
       cls: "vpb-icon-button",
       attr: { "aria-label": label }
     });
-    (0, import_obsidian5.setIcon)(button, icon);
+    (0, import_obsidian6.setIcon)(button, icon);
     return button;
   }
   createRefreshButton(container, label, action) {
@@ -12745,16 +12934,16 @@ var OverviewSection = class {
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
     button.classList.add("is-pending");
-    (0, import_obsidian5.setIcon)(button, "loader-2");
+    (0, import_obsidian6.setIcon)(button, "loader-2");
     try {
       await action();
     } catch (error) {
-      new import_obsidian5.Notice(`${label}\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
+      new import_obsidian6.Notice(`${label}\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
     } finally {
       button.disabled = false;
       button.removeAttribute("aria-busy");
       button.classList.remove("is-pending");
-      (0, import_obsidian5.setIcon)(button, "refresh-cw");
+      (0, import_obsidian6.setIcon)(button, "refresh-cw");
     }
   }
   actionButton(container, label, action) {
@@ -12771,7 +12960,7 @@ var OverviewSection = class {
       await action();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      new import_obsidian5.Notice(`VitePress Butterfly\uFF1A${message}`, 8e3);
+      new import_obsidian6.Notice(`VitePress Butterfly\uFF1A${message}`, 8e3);
     } finally {
       button.textContent = label;
       this.setButtonPending(button, false);
@@ -12788,13 +12977,13 @@ var OverviewSection = class {
     if (pending && !existing) {
       const loader = button.createSpan({ cls: "vpb-btn-loader" });
       button.insertBefore(loader, button.firstChild);
-      (0, import_obsidian5.setIcon)(loader, "loader-2");
+      (0, import_obsidian6.setIcon)(loader, "loader-2");
     } else if (!pending && existing) {
       existing.remove();
     }
   }
 };
-var CommitMessageModal = class extends import_obsidian5.Modal {
+var CommitMessageModal = class extends import_obsidian6.Modal {
   constructor() {
     super(...arguments);
     this.message = "";
@@ -12809,7 +12998,7 @@ var CommitMessageModal = class extends import_obsidian5.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.createEl("h3", { text: "\u63D0\u4EA4\u5E76\u53D1\u5E03" });
-    new import_obsidian5.Setting(contentEl).setName("\u63D0\u4EA4\u8BF4\u660E").setDesc("\u8FD9\u6BB5\u6587\u5B57\u4F1A\u4F5C\u4E3A Git commit message\uFF1B\u7559\u7A7A\u4F7F\u7528\u9ED8\u8BA4\u503C\u3002").addText((text) => {
+    new import_obsidian6.Setting(contentEl).setName("\u63D0\u4EA4\u8BF4\u660E").setDesc("\u8FD9\u6BB5\u6587\u5B57\u4F1A\u4F5C\u4E3A Git commit message\uFF1B\u7559\u7A7A\u4F7F\u7528\u9ED8\u8BA4\u503C\u3002").addText((text) => {
       text.setPlaceholder("Update blog content");
       text.inputEl.addEventListener("input", () => {
         this.message = text.getValue();
@@ -12839,7 +13028,7 @@ var CommitMessageModal = class extends import_obsidian5.Modal {
 // src/ui/ConsoleView.ts
 var CONSOLE_VIEW_TYPE = "vitepress-butterfly-console";
 var DEPLOYMENT_POLL_INTERVAL = 2e4;
-var ConsoleView = class extends import_obsidian6.ItemView {
+var ConsoleView = class extends import_obsidian7.ItemView {
   constructor(leaf, deps) {
     super(leaf);
     this.deps = deps;
@@ -12917,7 +13106,7 @@ var ConsoleView = class extends import_obsidian6.ItemView {
 };
 
 // src/main.ts
-var VitePressButterflyPublisher = class extends import_obsidian7.Plugin {
+var VitePressButterflyPublisher = class extends import_obsidian8.Plugin {
   async onload() {
     await this.loadSettings();
     this.blog = new BlogService({
@@ -13052,7 +13241,7 @@ var VitePressButterflyPublisher = class extends import_obsidian7.Plugin {
     try {
       await action();
     } catch (error) {
-      new import_obsidian7.Notice(`${name}\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
+      new import_obsidian8.Notice(`${name}\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
     }
   }
 };
