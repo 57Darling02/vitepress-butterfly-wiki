@@ -3578,24 +3578,25 @@ comments:
 }
 async function ensureTemplateFiles(app) {
   const vault = app.vault;
+  const adapter = vault.adapter;
   const created = [];
-  if (!vault.getAbstractFileByPath(SITE_CONFIG_PATH)) {
+  if (!await adapter.exists(SITE_CONFIG_PATH)) {
     const siteName = vault.getName().trim() || "My Blog";
     await vault.create(SITE_CONFIG_PATH, defaultSiteConfigYaml(siteName));
     created.push(SITE_CONFIG_PATH);
   }
-  if (!(vault.getAbstractFileByPath(PUBLIC_DIR) instanceof import_obsidian.TFolder)) {
-    await vault.createFolder(PUBLIC_DIR).catch(() => void 0);
-  }
-  if (!vault.getAbstractFileByPath(`${PUBLIC_DIR}/.gitkeep`)) {
+  if (!await adapter.exists(`${PUBLIC_DIR}/.gitkeep`)) {
+    if (!await adapter.exists(PUBLIC_DIR)) {
+      await vault.createFolder(PUBLIC_DIR).catch(() => void 0);
+    }
     await vault.create(`${PUBLIC_DIR}/.gitkeep`, "");
     created.push(`${PUBLIC_DIR}/.gitkeep`);
   }
   const workflowDir = ".github/workflows";
-  if (!vault.getAbstractFileByPath(workflowDir)) {
-    await vault.createFolder(workflowDir).catch(() => void 0);
-  }
-  if (!vault.getAbstractFileByPath(TRIGGER_WORKFLOW_PATH)) {
+  if (!await adapter.exists(TRIGGER_WORKFLOW_PATH)) {
+    if (!await adapter.exists(workflowDir)) {
+      await vault.createFolder(workflowDir).catch(() => void 0);
+    }
     await vault.create(TRIGGER_WORKFLOW_PATH, TRIGGER_WORKFLOW_YAML);
     created.push(TRIGGER_WORKFLOW_PATH);
   }
@@ -4085,9 +4086,16 @@ var BlogService = class {
     await git.init();
     await git.setConfig("user.name", repository.owner);
     await git.setConfig("user.email", `${repository.owner}@users.noreply.github.com`);
-    const status = await git.status();
-    if (status.all.length > 0) {
-      await git.commitAll("Initialize article repository");
+    if (await git.hasCommit()) {
+      const status = await git.status();
+      if (status.all.length > 0) {
+        await git.commitAll("Initialize article repository");
+      }
+    } else {
+      try {
+        await git.commitAll("Initialize article repository");
+      } catch {
+      }
     }
     if (!await git.hasCommit()) {
       throw new Error("\u5F53\u524D Vault \u6CA1\u6709\u53EF\u4E0A\u4F20\u7684\u6587\u4EF6\uFF0C\u8BF7\u81F3\u5C11\u4FDD\u7559\u4E00\u4E2A\u672A\u88AB .gitignore \u6392\u9664\u7684\u6587\u4EF6\u3002");
@@ -12297,8 +12305,19 @@ var StatusModal = class extends import_obsidian5.Modal {
     this.setBusy(true);
     try {
       await this.deps.saveSettings({ pat: pat.trim() });
-      await this.deps.blog.checkPat();
+      const result = await this.deps.blog.checkPat();
       this.clearError();
+      const changes = {};
+      const settings = this.deps.getSettings();
+      if (!settings.repoName.trim()) {
+        changes.repoName = result.suggestedArticleRepoName;
+      }
+      if (!settings.blogRepoName.trim()) {
+        changes.blogRepoName = result.suggestedBlogRepoName;
+      }
+      if (Object.keys(changes).length > 0) {
+        await this.deps.saveSettings(changes);
+      }
       this.deps.onChanged();
       if (this.deps.blog.isInitialized()) {
         this.close();

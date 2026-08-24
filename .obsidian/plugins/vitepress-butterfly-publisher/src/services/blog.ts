@@ -630,9 +630,20 @@ export class BlogService {
     await git.setConfig("user.name", repository.owner);
     await git.setConfig("user.email", `${repository.owner}@users.noreply.github.com`);
 
-    const status = await git.status();
-    if (status.all.length > 0) {
-      await git.commitAll("Initialize article repository");
+    // Without a HEAD (ZIP-downloaded vault) some engines fail on status();
+    // every file is new then, so commit directly. With a HEAD, only commit
+    // when there are changes.
+    if (await git.hasCommit()) {
+      const status = await git.status();
+      if (status.all.length > 0) {
+        await git.commitAll("Initialize article repository");
+      }
+    } else {
+      try {
+        await git.commitAll("Initialize article repository");
+      } catch {
+        // Empty vault: fall through to the hasCommit check below.
+      }
     }
     if (!(await git.hasCommit())) {
       throw new Error("当前 Vault 没有可上传的文件，请至少保留一个未被 .gitignore 排除的文件。");

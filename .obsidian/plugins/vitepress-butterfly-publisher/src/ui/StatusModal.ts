@@ -125,8 +125,23 @@ export class StatusModal extends Modal {
 		this.setBusy(true);
 		try {
 			await this.deps.saveSettings({ pat: pat.trim() });
-			await this.deps.blog.checkPat();
+			const result = await this.deps.blog.checkPat();
 			this.clearError();
+
+			// Auto-fill suggested repository names so the user never has to
+			// type them; existing values are kept.
+			const changes: Partial<PluginSettings> = {};
+			const settings = this.deps.getSettings();
+			if (!settings.repoName.trim()) {
+				changes.repoName = result.suggestedArticleRepoName;
+			}
+			if (!settings.blogRepoName.trim()) {
+				changes.blogRepoName = result.suggestedBlogRepoName;
+			}
+			if (Object.keys(changes).length > 0) {
+				await this.deps.saveSettings(changes);
+			}
+
 			this.deps.onChanged();
 			if (this.deps.blog.isInitialized()) {
 				this.close();

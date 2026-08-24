@@ -166,27 +166,31 @@ comments:
  */
 export async function ensureTemplateFiles(app: App): Promise<string[]> {
 	const vault = app.vault;
+	const adapter = vault.adapter;
 	const created: string[] = [];
 
-	if (!vault.getAbstractFileByPath(SITE_CONFIG_PATH)) {
+	// adapter.exists checks the real filesystem. vault.getAbstractFileByPath
+	// only sees cached files, so retries after an interrupted init would
+	// otherwise hit "File already exists" on files git left behind.
+	if (!(await adapter.exists(SITE_CONFIG_PATH))) {
 		const siteName = vault.getName().trim() || "My Blog";
 		await vault.create(SITE_CONFIG_PATH, defaultSiteConfigYaml(siteName));
 		created.push(SITE_CONFIG_PATH);
 	}
 
-	if (!(vault.getAbstractFileByPath(PUBLIC_DIR) instanceof TFolder)) {
-		await vault.createFolder(PUBLIC_DIR).catch(() => undefined);
-	}
-	if (!vault.getAbstractFileByPath(`${PUBLIC_DIR}/.gitkeep`)) {
+	if (!(await adapter.exists(`${PUBLIC_DIR}/.gitkeep`))) {
+		if (!(await adapter.exists(PUBLIC_DIR))) {
+			await vault.createFolder(PUBLIC_DIR).catch(() => undefined);
+		}
 		await vault.create(`${PUBLIC_DIR}/.gitkeep`, "");
 		created.push(`${PUBLIC_DIR}/.gitkeep`);
 	}
 
 	const workflowDir = ".github/workflows";
-	if (!vault.getAbstractFileByPath(workflowDir)) {
-		await vault.createFolder(workflowDir).catch(() => undefined);
-	}
-	if (!vault.getAbstractFileByPath(TRIGGER_WORKFLOW_PATH)) {
+	if (!(await adapter.exists(TRIGGER_WORKFLOW_PATH))) {
+		if (!(await adapter.exists(workflowDir))) {
+			await vault.createFolder(workflowDir).catch(() => undefined);
+		}
 		await vault.create(TRIGGER_WORKFLOW_PATH, TRIGGER_WORKFLOW_YAML);
 		created.push(TRIGGER_WORKFLOW_PATH);
 	}
