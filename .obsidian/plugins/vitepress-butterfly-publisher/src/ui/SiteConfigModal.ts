@@ -772,7 +772,8 @@ export class SiteConfigModal extends Modal {
 			};
 			renderChildren();
 			this.addListButton(listSection, "新增导航项", () => {
-				children.push(newMenuItem(children));
+				// Pass the whole tree so generated keys stay unique across levels.
+				children.push(newMenuItem(items));
 				notify();
 				renderChildren();
 			});
@@ -881,10 +882,14 @@ function move<T>(items: T[], from: number, direction: -1 | 1): void {
 	[items[from], items[to]] = [items[to], items[from]];
 }
 
-function newMenuItem(siblings: MenuItem[], isContainer = false): MenuItem {
+/**
+ * Creates a menu item whose key is unique across the whole navigation tree
+ * (top-level container and every child level), not just its siblings.
+ */
+function newMenuItem(tree: MenuItem[], isContainer = false): MenuItem {
+	const keys = collectMenuKeys(tree);
 	const base = "menu";
-	const keys = new Set(siblings.map((item) => item.key));
-	let index = siblings.length + 1;
+	let index = 1;
 	let key = `${base}-${index}`;
 	while (keys.has(key)) {
 		index += 1;
@@ -893,4 +898,18 @@ function newMenuItem(siblings: MenuItem[], isContainer = false): MenuItem {
 	return isContainer
 		? { key, label: "新菜单", icon: "circle", children: [] }
 		: { key, label: "新导航", icon: "link", link: "/" };
+}
+
+function collectMenuKeys(items: MenuItem[]): Set<string> {
+	const keys = new Set<string>();
+	const visit = (list: MenuItem[]): void => {
+		for (const item of list) {
+			keys.add(item.key);
+			if (item.children?.length) {
+				visit(item.children);
+			}
+		}
+	};
+	visit(items);
+	return keys;
 }

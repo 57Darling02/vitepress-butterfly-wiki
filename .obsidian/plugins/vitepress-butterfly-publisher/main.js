@@ -11500,7 +11500,7 @@ var SiteConfigModal = class extends import_obsidian3.Modal {
       };
       renderChildren();
       this.addListButton(listSection, "\u65B0\u589E\u5BFC\u822A\u9879", () => {
-        children.push(newMenuItem(children));
+        children.push(newMenuItem(items));
         notify();
         renderChildren();
       });
@@ -11574,16 +11574,29 @@ function move(items, from, direction) {
   if (to < 0 || to >= items.length) return;
   [items[from], items[to]] = [items[to], items[from]];
 }
-function newMenuItem(siblings, isContainer = false) {
+function newMenuItem(tree, isContainer = false) {
+  const keys = collectMenuKeys(tree);
   const base = "menu";
-  const keys = new Set(siblings.map((item) => item.key));
-  let index = siblings.length + 1;
+  let index = 1;
   let key = `${base}-${index}`;
   while (keys.has(key)) {
     index += 1;
     key = `${base}-${index}`;
   }
   return isContainer ? { key, label: "\u65B0\u83DC\u5355", icon: "circle", children: [] } : { key, label: "\u65B0\u5BFC\u822A", icon: "link", link: "/" };
+}
+function collectMenuKeys(items) {
+  const keys = /* @__PURE__ */ new Set();
+  const visit3 = (list) => {
+    for (const item of list) {
+      keys.add(item.key);
+      if (item.children?.length) {
+        visit3(item.children);
+      }
+    }
+  };
+  visit3(items);
+  return keys;
 }
 
 // src/ui/StatusModal.ts
