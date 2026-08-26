@@ -1,6 +1,13 @@
-# VitePress-Butterfly 文章仓库模板
+# VitePress-Butterfly 文章仓库模板（已迁移）
 
-这是 [VitePress-Butterfly](https://github.com/57Darling02/VitePress_butterfly) 的文章仓库模板，也是整个博客的使用入口。仓库已内置 VitePress Butterfly 控制台插件和 obsidian-git；桌面端与移动端都可以完成首次配置和日常发布。
+> **此仓库已并入 [VitePress_butterfly](https://github.com/57Darling02/VitePress_butterfly) 的 `template/` 目录，不再作为分发出入口。**
+>
+> 获取最新 Vault 模板：前往主题仓库 **Releases → vitepress-butterfly-wiki.zip**；
+> 插件自更新也从主题仓库 Release 拉取。本仓库保留作历史存档。
+
+---
+
+以下是迁移前的说明，保存在此供追溯：
 
 ## 双仓库模型
 
