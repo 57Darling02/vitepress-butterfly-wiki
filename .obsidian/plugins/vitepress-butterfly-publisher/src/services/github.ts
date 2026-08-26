@@ -176,28 +176,35 @@ export class GitHubClient {
     return { sha: result.sha, treeSha: result.commit.tree.sha };
   }
 
-  /** Creates a commit in a repository via the Git Data API. */
-  async createGitCommit(
-    repository: RepoRef,
-    options: { message: string; tree: string; parents: string[] },
-  ): Promise<{ sha: string }> {
-    return this.request<{ sha: string }>(
-      `${this.repositoryPath(repository)}/git/commits`,
-      {
-        method: "POST",
-        body: {
-          message: options.message,
-          tree: options.tree,
-          parents: options.parents,
-        },
-      },
-    );
-  }
-
   /** Reads a file from the default branch; contents API returns base64. */
   async getFileContent(repository: RepoRef, path: string): Promise<{ content: string; sha: string }> {
     return this.request<{ content: string; sha: string }>(
       `${this.repositoryPath(repository)}/contents/${encodeURIComponent(path)}`,
+    );
+  }
+
+  /** Finds a workflow id by its file path, or null when missing. */
+
+  /** Triggers a workflow_dispatch run on the given branch. */
+
+  /** Creates or updates a file via the contents API; pass sha to update. */
+  async writeFileContent(
+    repository: RepoRef,
+    path: string,
+    content: string,
+    message: string,
+    sha?: string,
+  ): Promise<void> {
+    await this.request<void>(
+      `${this.repositoryPath(repository)}/contents/${encodeURIComponent(path)}`,
+      {
+        method: "PUT",
+        body: {
+          message,
+          content: btoa(content),
+          ...(sha ? { sha } : {}),
+        },
+      },
     );
   }
 
@@ -236,29 +243,6 @@ export class GitHubClient {
         auto_init: options.autoInit ?? true,
       },
     });
-    return this.toRepository(result);
-  }
-
-  async createRepositoryFromTemplate(
-    template: RepoRef,
-    options: {
-      owner: string;
-      name: string;
-      private: boolean;
-    },
-  ): Promise<GitHubRepository> {
-    const result = await this.request<GitHubRepositoryResponse>(
-      `${this.repositoryPath(template)}/generate`,
-      {
-        method: "POST",
-        body: {
-          owner: options.owner,
-          name: options.name,
-          private: options.private,
-          include_all_branches: false,
-        },
-      },
-    );
     return this.toRepository(result);
   }
 
@@ -414,6 +398,10 @@ function apiMessage(body: string, status: number): string {
   if (status === 404) {
     return "GitHub 资源不存在，或当前 PAT 无权访问。";
   }
+  if (status === 409) {
+    return "合并冲突：博客仓库与主题存在冲突，请检查博客仓库是否有自定义修改。";
+  }
+
   if (status === 422) {
     return "仓库名已被占用或请求无法处理，请检查仓库名后重试。";
   }

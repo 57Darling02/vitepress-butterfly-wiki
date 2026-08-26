@@ -18,12 +18,128 @@ const PLUGIN_SOURCE_REPO: GitHubRepositoryRef = {
   name: "vitepress-butterfly-wiki",
 };
 
-const BLOG_TEMPLATE: GitHubRepositoryRef = {
+/** The theme repository: the single source of truth for theme code and versions. */
+const THEME_SOURCE_REPO: GitHubRepositoryRef = {
   owner: "57Darling02",
   name: "VitePress_butterfly",
 };
 const DEFAULT_BRANCH = "main";
 const DEPLOY_WORKFLOW_PATH = ".github/workflows/deploy.yml";
+
+/** Placeholder replaced with the pinned theme commit when writing the shell workflow. */
+const THEME_REF_PLACEHOLDER = "THEME_REF_PLACEHOLDER";
+
+/**
+ * The blog repository is a pure shell: this single workflow file, whose ref
+ * pins the theme version. Builds clone the theme repository at that commit
+ * and pull the article content via the theme's prepare-content script.
+ */
+const BLOG_WORKFLOW_YAML = `name: Deploy Site
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  repository_dispatch:
+    types: [contents-updated]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: site-deploy
+  cancel-in-progress: true
+env:
+  VERCEL_ORG_ID: \${ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: \${ secrets.VERCEL_PROJECT_ID }}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: \${ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check readiness
+        id: readiness
+        env:
+          WIKI_URL: \${ secrets.WIKI_URL }}
+          PAT: \${ secrets.PAT }}
+        run: |
+          if [ -z "$WIKI_URL" ] || [ -z "$PAT" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          wiki_url="\${WIKI_URL%/}"
+          if [[ ! "$wiki_url" =~ ^https://github\\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)(\\.git)?$ ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          owner="\${BASH_REMATCH[1]}"
+          repository="\${BASH_REMATCH[2]%.git}"
+          status="000"
+          for attempt in {1..5}; do
+            status="\$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
+              --output /dev/null --write-out '%{http_code}' \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer $PAT" \
+              "https://api.github.com/repos/$owner/$repository/git/ref/heads/main" || true)"
+            if [ "$status" = "200" ]; then
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              sleep 2
+            fi
+          done
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+      - name: Checkout theme
+        if: steps.readiness.outputs.ready == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: 57Darling02/VitePress_butterfly
+          ref: ${THEME_REF_PLACEHOLDER}
+          path: theme
+      - name: Install pnpm
+        if: steps.readiness.outputs.ready == 'true'
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9.15.0
+      - name: Setup Node
+        if: steps.readiness.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: theme/pnpm-lock.yaml
+      - name: Install dependencies
+        if: steps.readiness.outputs.ready == 'true'
+        run: pnpm --dir theme install --frozen-lockfile
+      - name: Build with VitePress
+        if: steps.readiness.outputs.ready == 'true'
+        env:
+          WIKI_URL: \${ secrets.WIKI_URL }}
+          PAT: \${ secrets.PAT }}
+        run: pnpm --dir theme docs:build
+      - name: Upload Pages artifact
+        if: steps.readiness.outputs.ready == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: theme/.vitepress/dist
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: steps.readiness.outputs.ready == 'true'
+        uses: actions/deploy-pages@v4
+      - name: Upload site artifact
+        if: steps.readiness.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-dist
+          path: theme/.vitepress/dist
+          retention-days: 7
+      - name: Deploy to Vercel (optional)
+        if: steps.readiness.outputs.ready == 'true' && secrets.VERCEL_TOKEN != '' && secrets.VERCEL_ORG_ID != '' && secrets.VERCEL_PROJECT_ID != ''
+        run: |
+          npx vercel deploy --prod --yes --token=\${ secrets.VERCEL_TOKEN }} theme/.vitepress/dist
+`;
 
 export interface BlogServiceDeps {
   app: App;
@@ -381,11 +497,7 @@ export class BlogService {
     if (!exists) {
       await this.deps.saveSettings({ pendingBlogRepo: fullName });
       try {
-        await client.createRepositoryFromTemplate(BLOG_TEMPLATE, {
-          owner: user.login,
-          name: blog.name,
-          private: false,
-        });
+        await client.createRepository({ name: blog.name, private: false, autoInit: true });
         created = true;
       } catch (error) {
         if (!(await this.createdDespiteError(client, blog, error, pending))) {
@@ -393,6 +505,15 @@ export class BlogService {
         }
         created = true;
       }
+      // The blog is a pure shell: write the deploy workflow pinned to the
+      // latest theme commit. Theme updates only rewrite the ref line.
+      const themeHead = await client.getBranchHead(THEME_SOURCE_REPO, DEFAULT_BRANCH);
+      await client.writeFileContent(
+        blog,
+        DEPLOY_WORKFLOW_PATH,
+        BLOG_WORKFLOW_YAML.replace(THEME_REF_PLACEHOLDER, themeHead.sha),
+        `chore: 初始化博客壳（钉定主题 ${themeHead.sha.slice(0, 7)}）`,
+      );
       exists = true;
     }
 
@@ -482,46 +603,42 @@ export class BlogService {
   // ------------------------------------------------------------------
 
   /**
-   * Read-only check whether the blog repository is already at the latest
-   * theme commit, so the console can skip the confirmation dialog when
-   * there is nothing to update.
+   * Pins the blog to a theme commit by rewriting the ref line of the shell
+   * deploy workflow (the blog repository's only file). The contents-API push
+   * triggers the deployment automatically. Pass an explicit ref to roll
+   * back to a previous theme version.
    */
-  async getThemeUpdateStatus(): Promise<{ latest: boolean; themeSha: string }> {
+  async updateTheme(ref?: string): Promise<{ themeSha: string }> {
     const settings = this.requireConnectedRepositoryNames("更新主题");
     const client = this.client();
     const user = await client.getAuthenticatedUser();
     const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "博客仓库") };
 
-    const themeHead = await client.getBranchHead(BLOG_TEMPLATE, DEFAULT_BRANCH);
-    const blogHead = await client.getBranchHead(blog, DEFAULT_BRANCH);
-    return { latest: themeHead.sha === blogHead.sha, themeSha: themeHead.sha };
-  }
+    const themeHead = await client.getBranchHead(THEME_SOURCE_REPO, DEFAULT_BRANCH);
+    const target = ref ?? themeHead.sha;
 
-  /**
-   * Updates the blog repository to the latest theme commit: the theme's tree
-   * becomes a new commit on top of the blog's current main, so history stays
-   * linear. Blog-side customizations are replaced — callers must confirm.
-   * Returns updated=false when the blog is already at the latest theme.
-   */
-  async updateTheme(): Promise<{ themeSha: string; updated: boolean }> {
-    const settings = this.requireConnectedRepositoryNames("更新主题");
-    const client = this.client();
-    const user = await client.getAuthenticatedUser();
-    const blog = { owner: user.login, name: validateRepoName(settings.blogRepoName, "博客仓库") };
-
-    const themeHead = await client.getBranchHead(BLOG_TEMPLATE, DEFAULT_BRANCH);
-    const blogHead = await client.getBranchHead(blog, DEFAULT_BRANCH);
-    if (themeHead.sha === blogHead.sha) {
-      return { themeSha: themeHead.sha, updated: false };
+    const existing = await client.getFileContent(blog, DEPLOY_WORKFLOW_PATH).catch(() => null);
+    if (!existing) {
+      throw new Error("博客仓库缺少 .github/workflows/deploy.yml，请先初始化博客仓库。");
     }
-
-    const commit = await client.createGitCommit(blog, {
-      message: `chore: 更新主题至 ${themeHead.sha.slice(0, 7)}`,
-      tree: themeHead.treeSha,
-      parents: [blogHead.sha],
-    });
-    await client.forceUpdateBranch(blog, DEFAULT_BRANCH, commit.sha);
-    return { themeSha: themeHead.sha, updated: true };
+    const content = decodeBase64(existing.content);
+    if (!/ref:\s+[0-9a-f]{40}/.test(content)) {
+      throw new Error(
+        "deploy.yml 不是壳版模板（缺少主题版本钉定行）。请手动删除博客仓库后重新初始化。",
+      );
+    }
+    const updated = content.replace(/ref:\s+[0-9a-f]{40}/, `ref: ${target}`);
+    if (updated === content) {
+      throw new Error(`博客已钉在该主题版本（${target.slice(0, 7)}），无需更新。`);
+    }
+    await client.writeFileContent(
+      blog,
+      DEPLOY_WORKFLOW_PATH,
+      updated,
+      `chore: 更新主题到 ${target.slice(0, 7)}`,
+      existing.sha,
+    );
+    return { themeSha: target };
   }
 
   /**

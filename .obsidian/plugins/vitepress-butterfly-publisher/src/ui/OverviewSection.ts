@@ -486,7 +486,6 @@ export class OverviewSection {
 class UpdateModal extends Modal {
 	private checking = true;
 	private plugin: { latest: boolean; current: string; latestVersion: string } | null = null;
-	private theme: { latest: boolean; themeSha: string } | null = null;
 	private error: string | null = null;
 	private updating: "plugin" | "theme" | null = null;
 
@@ -516,12 +515,7 @@ class UpdateModal extends Modal {
 		this.error = null;
 		this.render();
 		try {
-			const [plugin, theme] = await Promise.all([
-				this.deps.blog.checkPluginUpdate(),
-				this.deps.blog.getThemeUpdateStatus(),
-			]);
-			this.plugin = plugin;
-			this.theme = theme;
+			this.plugin = await this.deps.blog.checkPluginUpdate();
 		} catch (error) {
 			this.error = error instanceof Error ? error.message : String(error);
 		} finally {
@@ -571,21 +565,18 @@ class UpdateModal extends Modal {
 			});
 		}
 
-		// Theme section
+		// Theme section: the simplest reliable update is deleting the blog
+		// repository and recreating it from the theme template.
 		const themeSection = contentEl.createDiv({ cls: "vpb-update-item" });
 		themeSection.createEl("strong", { text: "博客主题" });
-		if (this.theme?.latest) {
-			themeSection.createEl("div", { text: "已是最新版本。", cls: "vpb-update-ok" });
-		} else {
-			themeSection.createEl("div", {
-				text: `检测到主题新版本（${this.theme?.themeSha.slice(0, 7) ?? "?"}）。将以主题仓库最新代码更新博客仓库 ${this.deps.blogRepo}，博客仓库上的自定义修改会被覆盖。`,
-				cls: "vpb-modal-hint",
-			});
-			const update = themeSection.createEl("button", { text: "更新主题", cls: "mod-cta" });
-			update.addEventListener("click", () => {
-				void this.doUpdateTheme(update);
-			});
-		}
+		themeSection.createEl("div", {
+			text: `将把博客仓库 ${this.deps.blogRepo} 钉定到最新主题版本：更新 .github/workflows/deploy.yml 中的主题 commit（博客仓库的唯一文件），推送后自动触发构建。无需删除或重建仓库。`,
+			cls: "vpb-modal-hint",
+		});
+		const update = themeSection.createEl("button", { text: "更新主题（重建博客）", cls: "mod-cta" });
+		update.addEventListener("click", () => {
+			void this.doUpdateTheme(update);
+		});
 
 		const footer = contentEl.createDiv({ cls: "modal-button-container" });
 		footer.createEl("button", { text: "关闭", cls: "mod-cta" })
@@ -616,7 +607,7 @@ class UpdateModal extends Modal {
 			const result = await this.deps.blog.updateTheme();
 			await this.deps.monitor.recordTrigger(`更新主题（${result.themeSha.slice(0, 7)}）`);
 			this.deps.onChanged();
-			new Notice("主题已更新，博客正在重新构建。", 5_000);
+			new Notice("博客仓库已重建，正在构建最新主题。", 6_000);
 			this.close();
 		} catch (error) {
 			this.error = error instanceof Error ? error.message : String(error);
